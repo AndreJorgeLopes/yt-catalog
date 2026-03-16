@@ -6,7 +6,7 @@
 
 ## Purpose
 
-A Python CLI tool that scrapes YouTube notification videos using Chrome browser automation (claude-in-chrome MCP), catalogs them with parallel Claude subagents, and outputs an Obsidian vault with categorized, ranked, and visualized video lists connected by topic tags.
+A Python CLI tool that scrapes YouTube notification videos using Chrome browser automation (claude-in-chrome MCP), catalogs them with a sequential Claude subagent pipeline, and outputs an Obsidian vault with categorized, ranked, and visualized video lists connected by topic tags.
 
 The tool avoids marking notifications as read on YouTube's side.
 
@@ -15,7 +15,7 @@ The tool avoids marking notifications as read on YouTube's side.
 ```
 ┌─────────────┐     ┌──────────────┐     ┌───────────────┐     ┌──────────────────┐
 │  Scraper     │ →   │  Enricher    │ →   │  Categorizer  │ →   │  Vault Generator │
-│  (chrome)    │     │  (parallel)  │     │  (Claude AI)  │     │  (Python)        │
+│  (chrome)    │     │  (sequential)│     │  (Claude AI)  │     │  (Python)        │
 └─────────────┘     └──────────────┘     └───────────────┘     └──────────────────┘
 ```
 
@@ -27,12 +27,27 @@ All phases are orchestrated by `cataloger.py`, which is the single entry point.
 
 Uses `claude --print` with claude-in-chrome MCP tools to navigate YouTube and extract notification data.
 
+### MCP Availability
+
+The claude-in-chrome MCP server must be configured in the user's Claude Code settings (`~/.claude/settings.json` or equivalent). The `claude --print` subprocess inherits MCP server configuration from the user's settings. The `--allowedTools` flag filters the available tools to only chrome-related ones.
+
 ### Steps
 
-1. Spawn a Claude session via `subprocess` with `--allowedTools "mcp__claude-in-chrome__*"`
+1. Spawn a Claude session via `subprocess` with `claude --print --allowedTools "mcp__claude-in-chrome__*" -p "<prompt>"`
 2. Claude navigates to `https://www.youtube.com/feed/notifications` (direct URL navigation — does NOT click the bell icon, preserving unread state)
-3. Claude uses `get_page_text` or `read_page` to extract the visible notification entries
-4. Claude scrolls down incrementally and re-reads after each scroll to capture newly loaded entries
+3. Claude uses `javascript_tool` to run a DOM query that extracts notification elements and their data, returning structured JSON. This avoids the `read_page` character limit (~50k chars) which YouTube's heavy DOM will exceed. Example JS:
+   ```javascript
+   // Extract all notification video entries
+   const entries = document.querySelectorAll('ytd-notification-renderer');
+   return JSON.stringify(Array.from(entries).map(e => ({
+     title: e.querySelector('#content-text')?.textContent?.trim(),
+     channel: e.querySelector('.channel-name')?.textContent?.trim(),
+     url: e.querySelector('a#thumbnail')?.href,
+     time: e.querySelector('.timestamp')?.textContent?.trim()
+   })));
+   ```
+   (Actual selectors will be determined during implementation by inspecting the live DOM.)
+4. Claude scrolls down incrementally using `computer` tool (scroll action) and re-runs the JS extraction after each scroll to capture newly loaded entries
 5. For each notification entry, extract:
    - Video title
    - Channel name
@@ -40,18 +55,20 @@ Uses `claude --print` with claude-in-chrome MCP tools to navigate YouTube and ex
    - Relative timestamp ("2 hours ago", "3 days ago")
    - Whether the URL contains `/shorts/` (pre-filter)
 6. Scrolling continues until one of:
-   - No new entries load after a scroll attempt
+   - No new entries load after a scroll attempt (3 consecutive attempts with same results)
    - `--max-days N` threshold reached (based on relative timestamps)
    - `--max-videos N` count reached
 7. Deduplicate by video ID
 8. Filter out entries with `/shorts/` URLs
-9. Save raw scraped data to `vault/runs/YYYY-MM-DD/data.json` as a checkpoint
+9. If 0 videos remain after filtering, exit with message "No videos found. Nothing to catalog."
+10. Save raw scraped data to `vault/runs/YYYY-MM-DD/data.json` as a checkpoint
 
 ### Checkpoint Format (data.json)
 
 ```json
 {
   "scrape_date": "2026-03-16T14:30:00Z",
+  "last_completed_phase": "scraping",
   "total_scraped": 142,
   "shorts_filtered": 23,
   "videos": [
@@ -67,6 +84,8 @@ Uses `claude --print` with claude-in-chrome MCP tools to navigate YouTube and ex
 }
 ```
 
+The `last_completed_phase` field tracks progress: `"scraping"` → `"enrichment"` → `"categorization"`. When loading from checkpoint, phases that have already completed are skipped automatically.
+
 ### Error Handling
 
 - If Chrome is not available or not logged into YouTube, fail fast with a clear error message
@@ -77,50 +96,60 @@ Uses `claude --print` with claude-in-chrome MCP tools to navigate YouTube and ex
 
 ### Approach
 
-Parallel Claude subagents visit individual video pages to extract detailed metadata not available from the notification feed.
+A single sequential Claude subagent visits video pages one batch at a time to extract detailed metadata. **Critical constraint:** All `claude --print` subprocesses share a single Chrome browser instance via the claude-in-chrome MCP extension. Running multiple subagents concurrently would cause tab conflicts and race conditions. Therefore, enrichment is strictly sequential.
 
 ### Steps
 
 1. Take the list of scraped video entries from Phase 1
-2. Batch videos into groups of ~5
-3. For each batch, spawn a Claude subagent via `subprocess` with chrome MCP tools
-4. Each subagent visits the video's YouTube page and extracts:
-   - **Duration** (exact, from the video player or page metadata)
+2. If checkpoint has `last_completed_phase: "enrichment"` or later, skip this phase
+3. Batch videos into groups of ~10
+4. For each batch, spawn a single Claude subagent via `subprocess` with chrome MCP tools
+5. The subagent visits each video page in the batch sequentially and extracts:
+   - **Duration** (exact, from the video player or page metadata via `javascript_tool`)
    - **Full description** (first 500 chars)
    - **View count**
    - **Like count** (if visible)
    - **Upload date** (exact date from the page)
-   - **Thumbnail URL** (from the page's meta tags or video player)
+   - **Thumbnail URL** (from the page's `og:image` meta tag or video player)
    - **Is Short** (duration < 60 seconds — secondary filter)
-5. Run batches in parallel using `concurrent.futures.ThreadPoolExecutor(max_workers=3)` (3 concurrent browser tabs)
 6. Merge enriched data back into the video list
 7. Filter out any newly-detected Shorts (duration < 60s)
-8. Download thumbnails to `vault/runs/YYYY-MM-DD/thumbnails/<video-id>.jpg`
-9. Update `data.json` checkpoint with enriched data
+8. Download thumbnails immediately to `vault/runs/YYYY-MM-DD/thumbnails/<video-id>.jpg` (thumbnails are downloaded right after enrichment to avoid URL expiry)
+9. Update `data.json` checkpoint with enriched data and `last_completed_phase: "enrichment"`
+10. Log warnings for any failed thumbnail downloads (don't fail the whole run)
 
 ### Subagent Prompt Template
 
 ```
-Visit this YouTube video page: {url}
+Visit each of the following YouTube video pages IN ORDER.
+For each video, navigate to the URL, extract the metadata, then move to the next.
 
-Extract the following information and return it as JSON:
+Videos:
+1. {url_1}
+2. {url_2}
+3. {url_3}
+... (up to 10)
+
+For each video, extract using javascript_tool or page reading:
+- video_id: string
 - duration_seconds: integer (total seconds)
 - description: string (first 500 characters)
 - view_count: integer
 - like_count: integer or null
 - upload_date: string (ISO 8601)
-- thumbnail_url: string (highest resolution available)
+- thumbnail_url: string (from og:image meta tag, highest resolution)
 - is_short: boolean (true if duration < 60 seconds)
 
-Use the page metadata, video player, or page text to find this information.
-Return ONLY the JSON object, no other text.
+Return a JSON array with one object per video, in the same order as the input list.
+Return ONLY the JSON array, no other text.
 ```
 
-### Parallelism
+### Sequential Processing
 
-- Max 3 concurrent browser tabs to avoid overwhelming Chrome
-- Each batch of ~5 videos is processed sequentially within a subagent (one tab, visiting pages one after another)
-- Total concurrent video page visits = 3 × 1 = 3 at a time
+- One Claude subprocess at a time controls Chrome
+- Each subprocess handles a batch of ~10 videos sequentially (visit page, extract, next)
+- Batches are processed one after another (not concurrently)
+- This is slower but avoids Chrome tab conflicts from concurrent MCP access
 
 ## Phase 3: Categorization & Ranking (categorizer.py)
 
@@ -196,13 +225,26 @@ Within each duration sub-group: **oldest first** (by upload date).
 ```
 You are categorizing YouTube videos for a user with these interests:
 - Top interests: Programming, Tech News, Comedy
-- Portuguese content gets a significant boost
-- Favorites: Evan and Katelyn, MrWhoseTheBoss, Bernardo Almeida
-- ASMR/chiropractic/massage = sleep content (separate tier)
+- Portuguese content gets a significant boost (+15 points)
+- Favorite channels (always +20): Evan and Katelyn, MrWhoseTheBoss, Bernardo Almeida
+- ASMR/chiropractic/massage = sleep content (separate tier, separate scoring)
+
+## Main Content Scoring Rubric (0-100)
+Base scores: Programming=70, Tech News=70, Comedy=70, DIY/Makers=60, Hardware=55, Games=45, General=30
+Modifiers: Portuguese language +15, Favorite channel +20, Uploaded <24h ago +5, Your judgment ±15
+Clamp final score to 0-100.
+
+## Sleep Content Scoring Rubric (0-100)
+For ASMR, chiropractic, and massage videos, score on a SEPARATE scale:
+- Channel reputation for relaxation content (known creators score higher)
+- Video length: >30min gets +15, >1hr gets +25 (longer = better for sleep)
+- Title signals: keywords like "sleep", "relaxing", "no talking" get +10
+- Your judgment on relaxation quality ±15
+Base score for sleep content: 50. Apply modifiers. Clamp to 0-100.
 
 For each video, provide:
 1. category: one of [programming, tech-news, comedy, games, hardware, diy-makers, general, sleep]
-2. interest_score: 0-100 (use the scoring rubric provided)
+2. interest_score: 0-100 (use the APPROPRIATE rubric — main content OR sleep content)
 3. tags: 3-5 topic tags for graph view connections (e.g., "python", "react", "nvidia", "woodworking")
 4. brief_summary: 1-2 sentence description
 
@@ -269,6 +311,8 @@ Tags are rendered as colored nodes. Videos sharing a tag are connected through i
 
 The `--no-mermaid-thumbnails` CLI flag switches to text-only nodes if the HTML approach doesn't render.
 
+**Scaling note:** For runs with 50+ videos, the mermaid graph is limited to the **top 30 videos by interest score** to keep the diagram readable and performant in Obsidian. The full video list is always available in the category files and gallery sections.
+
 #### Gallery Sections
 
 Below the mermaid graph, each category gets a visual gallery:
@@ -328,7 +372,7 @@ Defines the tag taxonomy for consistency across runs:
 - #ai, #machine-learning, #devops, #web-dev
 ```
 
-This file is maintained across runs (not overwritten) and grows as new tags are discovered.
+This file is regenerated each run from the current video set's tags. Cross-run tag persistence is not needed — each run is self-contained.
 
 ### Thumbnail Handling
 
@@ -361,9 +405,19 @@ class Video:
     summary: str | None         # AI-generated brief
     duration_group: str | None  # super-small, small, long, super-big
 
+    @property
+    def formatted_duration(self) -> str:
+        """Format duration_seconds as MM:SS or HH:MM:SS."""
+        if self.duration_seconds is None:
+            return "??:??"
+        h, rem = divmod(self.duration_seconds, 3600)
+        m, s = divmod(rem, 60)
+        return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
 @dataclass
 class CatalogRun:
     run_date: str
+    last_completed_phase: str   # "scraping", "enrichment", "categorization"
     total_scraped: int
     shorts_filtered: int
     videos: list[Video]
@@ -375,16 +429,14 @@ class CatalogRun:
 ```
 usage: cataloger.py [-h] [--max-days N] [--max-videos N]
                     [--from-checkpoint PATH] [--no-mermaid-thumbnails]
-                    [--workers N]
 
 YouTube Notification Cataloger
 
 options:
   --max-days N           Only scrape notifications from the last N days
   --max-videos N         Stop after scraping N videos
-  --from-checkpoint PATH Skip scraping, load from a previous data.json
+  --from-checkpoint PATH Resume from a previous data.json (skips completed phases)
   --no-mermaid-thumbnails Use text-only mermaid nodes (no HTML img attempts)
-  --workers N            Number of parallel enrichment workers (default: 3)
 ```
 
 ### Execution Flow
@@ -395,29 +447,41 @@ def main():
     run_date = date.today().isoformat()
     run_dir = f"vault/runs/{run_date}"
 
-    # Phase 1: Scrape (or load checkpoint)
+    # Load checkpoint if resuming
+    checkpoint = None
     if args.from_checkpoint:
-        videos = load_checkpoint(args.from_checkpoint)
+        checkpoint = load_checkpoint(args.from_checkpoint)
+
+    # Phase 1: Scrape (skip if checkpoint has scraping done)
+    if checkpoint and checkpoint.last_completed_phase >= "scraping":
+        videos = checkpoint.videos
     else:
         videos = scrape_notifications(
             max_days=args.max_days,
             max_videos=args.max_videos
         )
-        save_checkpoint(videos, run_dir)
+        if not videos:
+            print("No videos found. Nothing to catalog.")
+            return
+        save_checkpoint(videos, run_dir, phase="scraping")
 
-    # Phase 2: Enrich (parallel subagents)
-    videos = enrich_videos(videos, workers=args.workers)
-    videos = [v for v in videos if not v.is_short]  # Final short filter
-    download_thumbnails(videos, run_dir)
-    save_checkpoint(videos, run_dir)  # Update checkpoint
+    # Phase 2: Enrich (sequential — single Chrome instance)
+    if not (checkpoint and checkpoint.last_completed_phase >= "enrichment"):
+        videos = enrich_videos(videos)
+        videos = [v for v in videos if not v.is_short]  # Final short filter
+        download_thumbnails(videos, run_dir)
+        save_checkpoint(videos, run_dir, phase="enrichment")
 
-    # Phase 3: Categorize & Rank (single Claude call)
-    videos = categorize_and_rank(videos)
-    save_checkpoint(videos, run_dir)  # Final checkpoint
+    # Phase 3: Categorize & Rank (single Claude call, no Chrome needed)
+    if not (checkpoint and checkpoint.last_completed_phase >= "categorization"):
+        videos = categorize_and_rank(videos)
+        save_checkpoint(videos, run_dir, phase="categorization")
 
-    # Phase 4: Generate Obsidian vault
+    # Phase 4: Generate Obsidian vault (pure Python, always runs)
     generate_vault(videos, run_dir,
                    mermaid_thumbnails=not args.no_mermaid_thumbnails)
+
+    print(f"Done! Vault generated at {run_dir}/")
 ```
 
 ## Dependencies
@@ -441,8 +505,11 @@ No pip packages required — the script uses only stdlib (`subprocess`, `json`, 
 
 | Risk | Mitigation |
 |---|---|
-| YouTube DOM changes break scraping | Claude's natural language understanding of page content is resilient to minor DOM changes; checkpoint system allows re-processing |
+| YouTube DOM changes break scraping | Claude's natural language understanding + `javascript_tool` DOM queries are resilient to minor DOM changes; checkpoint system allows re-processing |
 | Chrome not logged in | Fail fast with clear error message directing user to log in |
 | Too many notifications (slow) | `--max-days` and `--max-videos` flags; checkpoint system for incremental work |
 | Mermaid HTML images don't render | `--no-mermaid-thumbnails` flag; gallery sections always work |
-| Rate limiting on Claude CLI calls | 3-worker limit by default; configurable via `--workers` |
+| Sequential enrichment is slow for many videos | Batches of 10 reduce subprocess overhead; checkpoint resume enables splitting work across sessions |
+| Thumbnail URLs expire between enrichment and download | Thumbnails downloaded immediately after enrichment within the same phase; failed downloads log a warning |
+| Mermaid graph unreadable with 100+ videos | Graph limited to top 30 by interest score; full list in category files |
+| 0 videos after filtering | Early exit with informative message |
