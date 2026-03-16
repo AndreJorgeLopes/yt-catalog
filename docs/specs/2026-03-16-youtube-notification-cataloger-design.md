@@ -447,13 +447,18 @@ def main():
     run_date = date.today().isoformat()
     run_dir = f"vault/runs/{run_date}"
 
+    # Phase ordering for checkpoint resume logic
+    PHASE_ORDER = {"scraping": 1, "enrichment": 2, "categorization": 3}
+
     # Load checkpoint if resuming
     checkpoint = None
+    completed_phase = 0
     if args.from_checkpoint:
         checkpoint = load_checkpoint(args.from_checkpoint)
+        completed_phase = PHASE_ORDER.get(checkpoint.last_completed_phase, 0)
 
     # Phase 1: Scrape (skip if checkpoint has scraping done)
-    if checkpoint and checkpoint.last_completed_phase >= "scraping":
+    if completed_phase >= PHASE_ORDER["scraping"]:
         videos = checkpoint.videos
     else:
         videos = scrape_notifications(
@@ -466,14 +471,14 @@ def main():
         save_checkpoint(videos, run_dir, phase="scraping")
 
     # Phase 2: Enrich (sequential — single Chrome instance)
-    if not (checkpoint and checkpoint.last_completed_phase >= "enrichment"):
+    if completed_phase < PHASE_ORDER["enrichment"]:
         videos = enrich_videos(videos)
         videos = [v for v in videos if not v.is_short]  # Final short filter
         download_thumbnails(videos, run_dir)
         save_checkpoint(videos, run_dir, phase="enrichment")
 
     # Phase 3: Categorize & Rank (single Claude call, no Chrome needed)
-    if not (checkpoint and checkpoint.last_completed_phase >= "categorization"):
+    if completed_phase < PHASE_ORDER["categorization"]:
         videos = categorize_and_rank(videos)
         save_checkpoint(videos, run_dir, phase="categorization")
 
@@ -491,7 +496,7 @@ def main():
 - Claude-in-Chrome MCP (for browser automation)
 - Chrome browser (logged into YouTube)
 
-No pip packages required — the script uses only stdlib (`subprocess`, `json`, `dataclasses`, `concurrent.futures`, `argparse`, `urllib`, `pathlib`, `datetime`).
+No pip packages required — the script uses only stdlib (`subprocess`, `json`, `dataclasses`, `argparse`, `urllib`, `pathlib`, `datetime`).
 
 ## Non-Goals
 
