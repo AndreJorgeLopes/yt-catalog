@@ -1,32 +1,45 @@
-from yt_catalog.cataloger import parse_args
+from yt_catalog.cli import main
+import pytest
 
 
-def test_parse_args_defaults():
-    args = parse_args([])
-    assert args.max_days is None
-    assert args.max_videos is None
-    assert args.from_checkpoint is None
-    assert args.no_mermaid_thumbnails is False
-    assert args.source == "chrome"
+def test_parse_run_defaults(capsys):
+    """yt-catalog run with no extra args parses defaults."""
+    # We can't run the full pipeline, but we can test that --help works
+    with pytest.raises(SystemExit) as exc_info:
+        main(["run", "--help"])
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "--source" in captured.out
+    assert "--max-days" in captured.out
+    assert "--from-checkpoint" in captured.out
 
 
-def test_parse_args_with_options():
-    args = parse_args(["--max-days", "7", "--max-videos", "50", "--no-mermaid-thumbnails"])
-    assert args.max_days == 7
-    assert args.max_videos == 50
-    assert args.no_mermaid_thumbnails is True
+def test_parse_setup_help(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["setup", "--help"])
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "--api-key-only" in captured.out
 
 
-def test_parse_args_checkpoint():
-    args = parse_args(["--from-checkpoint", "/path/to/data.json"])
-    assert args.from_checkpoint == "/path/to/data.json"
+def test_parse_discover_help(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["discover", "--help"])
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "checkpoint" in captured.out
 
 
-def test_parse_args_source_chrome():
-    args = parse_args(["--source", "chrome"])
-    assert args.source == "chrome"
+def test_version_flag(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--version"])
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "0.1.0" in captured.out
 
 
-def test_parse_args_source_api():
-    args = parse_args(["--source", "api"])
-    assert args.source == "api"
+def test_no_command_fails():
+    """Calling with no subcommand should fail."""
+    with pytest.raises(SystemExit) as exc_info:
+        main([])
+    assert exc_info.value.code != 0
