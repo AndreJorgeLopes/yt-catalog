@@ -18,28 +18,107 @@ API_BASE = "https://www.googleapis.com/youtube/v3"
 def _get_api_key() -> str:
     key = os.environ.get("YOUTUBE_API_KEY")
     if not key:
+        # Try config file
+        from .oauth import load_config
+        config = load_config()
+        key = config.get("api_key", "")
+    if not key:
         print("Error: YOUTUBE_API_KEY environment variable not set.", file=sys.stderr)
         print("Get one at: https://console.cloud.google.com/apis/credentials", file=sys.stderr)
         sys.exit(1)
     return key
 
 
+def _get_auth_headers() -> dict[str, str]:
+    """Return OAuth Bearer header if available, else empty dict."""
+    try:
+        from .oauth import is_authenticated, get_access_token
+        if is_authenticated():
+            token = get_access_token()
+            return {"Authorization": f"Bearer {token}"}
+    except Exception:
+        pass
+    return {}
+
+
 def _api_get(endpoint: str, params: dict) -> dict:
-    """Make a GET request to the YouTube Data API with retry on failure."""
-    api_key = _get_api_key()
-    params["key"] = api_key
+    """Make a GET request to the YouTube Data API with retry on failure.
+
+    Uses OAuth Bearer token if available, otherwise falls back to API key.
+    """
+    auth_headers = _get_auth_headers()
+    if not auth_headers:
+        # Fall back to API key
+        api_key = _get_api_key()
+        params["key"] = api_key
     url = f"{API_BASE}/{endpoint}?{urllib.parse.urlencode(params)}"
 
     def _do_request():
         req = urllib.request.Request(url)
+        for k, v in auth_headers.items():
+            req.add_header(k, v)
         resp = urllib.request.urlopen(req, timeout=15)
         return json.loads(resp.read())
 
     return retry(_do_request, max_retries=3, delay=1, backoff=2)
 
 
+def get_subscriptions_oauth() -> list[str]:
+    """Get subscribed channel IDs via OAuth subscriptions.list API.
+
+    Returns a list of channel IDs, or empty list on failure.
+    """
+    try:
+        from .oauth import is_authenticated, get_access_token
+        if not is_authenticated():
+            return []
+    except Exception:
+        return []
+
+    access_token = get_access_token()
+    channel_ids: list[str] = []
+    page_token = None
+
+    while True:
+        params: dict[str, str | int] = {
+            "part": "snippet",
+            "mine": "true",
+            "maxResults": 50,
+        }
+        if page_token:
+            params["pageToken"] = page_token
+
+        url = f"{API_BASE}/subscriptions?{urllib.parse.urlencode(params)}"
+        req = urllib.request.Request(url)
+        req.add_header("Authorization", f"Bearer {access_token}")
+
+        try:
+            resp = urllib.request.urlopen(req, timeout=15)
+            data = json.loads(resp.read())
+        except Exception as e:
+            print(f"Warning: OAuth subscriptions fetch failed: {e}", file=sys.stderr)
+            break
+
+        for item in data.get("items", []):
+            cid = item.get("snippet", {}).get("resourceId", {}).get("channelId")
+            if cid:
+                channel_ids.append(cid)
+
+        page_token = data.get("nextPageToken")
+        if not page_token:
+            break
+
+    return channel_ids
+
+
 def _get_subscribed_channel_ids() -> list[str]:
-    """Get channel IDs from channels.json (populated by chrome runs)."""
+    """Get channel IDs — tries OAuth first, falls back to channels.json."""
+    # Try OAuth subscriptions first
+    oauth_ids = get_subscriptions_oauth()
+    if oauth_ids:
+        return oauth_ids
+
+    # Fall back to channels.json
     channels_file = str(Path.cwd() / "channels.json")
     if os.path.exists(channels_file):
         with open(channels_file) as f:
