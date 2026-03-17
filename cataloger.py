@@ -8,6 +8,11 @@ import sys
 from datetime import date
 from pathlib import Path
 
+from utils import load_dotenv
+
+# Load .env before anything else touches env vars
+load_dotenv()
+
 from config import PHASE_ORDER
 from models import Video, save_checkpoint, load_checkpoint
 from scraper import scrape_notifications
@@ -30,13 +35,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--source", choices=["chrome", "api"], default="chrome",
                         help="Scraping source: 'chrome' uses bell-dropdown (default), "
                              "'api' uses YouTube Data API v3 (requires YOUTUBE_API_KEY)")
+    parser.add_argument("--discover-channels", type=str, default=None, nargs="?", const="auto",
+                        help="Discover channel IDs and save to channels.json. "
+                             "Pass a checkpoint path to extract from existing data, "
+                             "or 'auto' to use the latest run.")
     return parser.parse_args(argv)
 
 
-def _save_channels_json(videos: list[Video], channels_map: dict[str, str]) -> None:
+def _save_channels_json(channels_map: dict[str, str]) -> None:
     """Save channel name→ID mapping to channels.json for future API runs."""
     channels_file = Path(__file__).parent / "channels.json"
-    # Merge with existing data if present
     existing: dict = {}
     if channels_file.exists():
         try:
@@ -46,12 +54,78 @@ def _save_channels_json(videos: list[Video], channels_map: dict[str, str]) -> No
         except Exception:
             existing = {}
     existing.update(channels_map)
-    channels_file.write_text(json.dumps(existing, indent=2))
+    channels_file.write_text(json.dumps(existing, indent=2, ensure_ascii=False))
     print(f"  Saved {len(existing)} channels to channels.json")
+
+
+def discover_channels(checkpoint_path: str | None = None) -> None:
+    """Discover channel IDs from existing data or via InnerTube API.
+
+    1. Loads videos from a checkpoint (or finds the latest run)
+    2. For videos missing channel_id, calls InnerTube player API to resolve it
+    3. Saves {channel_name: channel_id} to channels.json
+    """
+    from enricher import enrich_videos_innertube
+
+    # Find checkpoint
+    if checkpoint_path and checkpoint_path != "auto":
+        cp_path = checkpoint_path
+    else:
+        # Find the latest run
+        runs_dir = Path("vault/runs")
+        if not runs_dir.exists():
+            print("No runs found. Run a scrape first with: python cataloger.py")
+            return
+        run_dirs = sorted(runs_dir.iterdir(), reverse=True)
+        cp_path = None
+        for d in run_dirs:
+            candidate = d / "data.json"
+            if candidate.exists():
+                cp_path = str(candidate)
+                break
+        if not cp_path:
+            print("No checkpoint found in vault/runs/. Run a scrape first.")
+            return
+
+    print(f"Loading checkpoint: {cp_path}")
+    checkpoint = load_checkpoint(cp_path)
+    videos = checkpoint.videos
+    print(f"  {len(videos)} videos loaded")
+
+    # Check which videos already have channel_id
+    missing_id = [v for v in videos if not v.channel_id]
+    has_id = [v for v in videos if v.channel_id]
+    print(f"  {len(has_id)} already have channel_id, {len(missing_id)} need resolution")
+
+    if missing_id:
+        print(f"  Resolving {len(missing_id)} channel IDs via InnerTube API...")
+        enrich_videos_innertube(missing_id)
+
+    # Build channel map
+    channels_map: dict[str, str] = {}
+    for v in videos:
+        if v.channel and v.channel_id and v.channel not in channels_map:
+            channels_map[v.channel] = v.channel_id
+
+    if not channels_map:
+        print("  No channel IDs could be resolved.")
+        return
+
+    _save_channels_json(channels_map)
+    print(f"\nDiscovered {len(channels_map)} unique channels:")
+    for name, cid in sorted(channels_map.items()):
+        print(f"  {name}: {cid}")
 
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
+
+    # --discover-channels is a standalone command
+    if args.discover_channels is not None:
+        path = args.discover_channels if args.discover_channels != "auto" else None
+        discover_channels(path)
+        return
+
     run_date = date.today().isoformat()
     run_dir = str(Path("vault") / "runs" / run_date)
 
@@ -110,10 +184,10 @@ def main(argv: list[str] | None = None) -> None:
         # Auto-save channel name→ID map for future API runs
         channels_map = {}
         for v in videos:
-            # InnerTube doesn't return channelId in the fields we parse currently;
-            # save channel names that can be resolved later via channels list API
-            if v.channel and v.channel not in channels_map:
-                channels_map[v.channel] = ""  # placeholder; ID not available without extra call
+            if v.channel and v.channel_id:
+                channels_map[v.channel] = v.channel_id
+        if channels_map:
+            _save_channels_json(channels_map)
 
         print("  Downloading thumbnails...")
         download_thumbnails(videos, run_dir)

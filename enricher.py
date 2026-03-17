@@ -91,6 +91,7 @@ def enrich_videos_innertube(videos: list[Video]) -> list[Video]:
             )
             v.is_live = details.get("isLiveContent", False)
             v.is_short = (v.duration_seconds or 0) > 0 and (v.duration_seconds or 0) < 60
+            v.channel_id = details.get("channelId")
 
             if (i + 1) % 20 == 0:
                 print(f"    {i+1}/{len(videos)} enriched...")

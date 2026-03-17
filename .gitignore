@@ -1,3 +1,6 @@
 vault/runs/
 __pycache__/
 *.pyc
+.env
+.pytest_cache/
+channels.json

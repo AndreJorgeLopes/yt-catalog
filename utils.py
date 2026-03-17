@@ -1,8 +1,27 @@
 """Utility functions for the YouTube Notification Cataloger."""
 from __future__ import annotations
+import os
 import time
 import sys
+from pathlib import Path
 from typing import Callable, TypeVar
+
+
+def load_dotenv(dotenv_path: str | None = None) -> None:
+    """Load .env file into os.environ. No-op if file doesn't exist."""
+    path = Path(dotenv_path) if dotenv_path else Path(__file__).parent / ".env"
+    if not path.exists():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip("'\"")
+            if key and key not in os.environ:  # Don't override existing env vars
+                os.environ[key] = value
 
 T = TypeVar("T")
 
