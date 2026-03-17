@@ -23,6 +23,12 @@ def main(argv: list[str] | None = None) -> None:
     run_parser.add_argument("--max-videos", type=int)
     run_parser.add_argument("--from-checkpoint", type=str)
     run_parser.add_argument("--no-mermaid-thumbnails", action="store_true")
+    run_parser.add_argument(
+        "--ai-provider",
+        choices=["claude-cli", "opencode-cli", "codex-cli", "anthropic", "openai", "rules"],
+        default=None,
+        help="AI provider for categorization (overrides AI_PROVIDER env var, 'rules' for no AI)",
+    )
 
     # yt-catalog setup
     setup_parser = subparsers.add_parser("setup", help="Configure YouTube API OAuth and discover channels")

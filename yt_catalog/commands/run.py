@@ -3,6 +3,7 @@
 from __future__ import annotations
 import argparse
 import json
+import os
 from datetime import date
 from pathlib import Path
 
@@ -32,6 +33,12 @@ def _save_channels_json(channels_map: dict[str, str]) -> None:
 
 
 def handle_run(args: argparse.Namespace) -> None:
+    if args.ai_provider:
+        os.environ["AI_PROVIDER"] = args.ai_provider
+        if args.source == "chrome" and args.ai_provider != "claude-cli":
+            print("Warning: Chrome integration requires Claude CLI. Notifications scraping will use Chrome,")
+            print("but AI categorization will use the specified provider.")
+
     run_date = date.today().isoformat()
     run_dir = str(Path("vault") / "runs" / run_date)
 
