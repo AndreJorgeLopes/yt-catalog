@@ -9,6 +9,7 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 
 from models import Video
+from utils import retry
 
 API_BASE = "https://www.googleapis.com/youtube/v3"
 
@@ -23,13 +24,17 @@ def _get_api_key() -> str:
 
 
 def _api_get(endpoint: str, params: dict) -> dict:
-    """Make a GET request to the YouTube Data API."""
+    """Make a GET request to the YouTube Data API with retry on failure."""
     api_key = _get_api_key()
     params["key"] = api_key
     url = f"{API_BASE}/{endpoint}?{urllib.parse.urlencode(params)}"
-    req = urllib.request.Request(url)
-    resp = urllib.request.urlopen(req, timeout=15)
-    return json.loads(resp.read())
+
+    def _do_request():
+        req = urllib.request.Request(url)
+        resp = urllib.request.urlopen(req, timeout=15)
+        return json.loads(resp.read())
+
+    return retry(_do_request, max_retries=3, delay=1, backoff=2)
 
 
 def _get_subscribed_channel_ids() -> list[str]:

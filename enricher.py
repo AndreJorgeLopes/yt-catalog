@@ -8,6 +8,7 @@ from pathlib import Path
 
 from models import Video, extract_json_array
 from config import ENRICHER_PROMPT
+from utils import retry
 
 INNERTUBE_URL = (
     "https://www.youtube.com/youtubei/v1/player"
@@ -64,17 +65,20 @@ def enrich_videos_innertube(videos: list[Video]) -> list[Video]:
     """Enrich videos using YouTube's InnerTube player API (no auth needed)."""
     for i, v in enumerate(videos):
         try:
-            body = json.dumps({
-                "context": {"client": {"clientName": "WEB", "clientVersion": "2.20260316.01.00"}},
-                "videoId": v.video_id,
-            }).encode()
-            req = urllib.request.Request(
-                INNERTUBE_URL,
-                data=body,
-                headers={"Content-Type": "application/json"},
-            )
-            resp = urllib.request.urlopen(req, timeout=10)
-            result = json.loads(resp.read())
+            def _fetch_video(vid=v.video_id):
+                body = json.dumps({
+                    "context": {"client": {"clientName": "WEB", "clientVersion": "2.20260316.01.00"}},
+                    "videoId": vid,
+                }).encode()
+                req = urllib.request.Request(
+                    INNERTUBE_URL,
+                    data=body,
+                    headers={"Content-Type": "application/json"},
+                )
+                resp = urllib.request.urlopen(req, timeout=10)
+                return json.loads(resp.read())
+
+            result = retry(_fetch_video, max_retries=3, delay=1, backoff=2)
             details = result.get("videoDetails", {})
             micro = result.get("microformat", {}).get("playerMicroformatRenderer", {})
 
