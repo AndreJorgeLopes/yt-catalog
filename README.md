@@ -59,6 +59,33 @@ YouTube's notification bell is a stream of consciousness — hundreds of uploads
 
 Total pipeline: **~8 seconds** for 200+ videos. See [benchmarks](#benchmarks) for methodology.
 
+### Incremental run intelligence
+
+After the first run, `yt-catalog` tracks a **watermark** — the upload date of the newest video it processed. Subsequent runs only fetch videos published after that watermark, making them dramatically faster.
+
+```
+Run 1 (first):     Fetch ALL → 216 videos → 7.6s
+Run 2 (next day):  Fetch since watermark → 17 videos → 6.2s
+Run 3 (same day):  Fetch since watermark → 3 videos → 5.8s
+```
+
+The system maintains a **rolling daily median** of videos-per-day for your subscription set. This median is used to estimate how many new videos to expect before making API calls, enabling smarter batching and quota management.
+
+```
+Daily median calculation:
+  videos_per_day = new_videos / days_since_last_run
+  median = rolling_median(last_30_data_points)
+  estimate_next = days_elapsed × median × 1.5  (50% safety buffer)
+```
+
+This means `yt-catalog` gets *faster over time* as it narrows the fetch window — the opposite of most notification tools that slow down as your subscriptions grow.
+
+State is persisted in `vault/run_state.json` and includes:
+- **Watermark**: newest video date from last run
+- **Video ID set**: for cross-run deduplication
+- **Daily counts**: rolling window for median calculation
+- **Run history**: date + count for each run (last 50)
+
 ### Scoring engine
 
 Every video is scored 0–100 using a deterministic formula:

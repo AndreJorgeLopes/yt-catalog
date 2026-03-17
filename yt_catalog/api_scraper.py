@@ -223,8 +223,16 @@ def _best_thumbnail(thumbnails: dict) -> str:
     return ""
 
 
-def scrape_via_api(max_days: int | None = None, max_videos: int | None = None) -> list[Video]:
-    """Scrape recent uploads from subscribed channels via YouTube Data API."""
+def scrape_via_api(max_days: int | None = None, max_videos: int | None = None,
+                   since_date: str | None = None) -> list[Video]:
+    """Scrape recent uploads from subscribed channels via YouTube Data API.
+
+    Args:
+        max_days: Only fetch videos from the last N days.
+        max_videos: Cap total video count.
+        since_date: ISO 8601 date — only fetch videos uploaded after this date.
+                    Used for incremental runs (watermark from previous run).
+    """
     channel_ids = _get_subscribed_channel_ids()
     if not channel_ids:
         print("No channel IDs found. Create a channels.json file with channel IDs,", file=sys.stderr)
@@ -232,7 +240,13 @@ def scrape_via_api(max_days: int | None = None, max_videos: int | None = None) -
         return []
 
     cutoff_date = None
-    if max_days:
+    if since_date:
+        try:
+            cutoff_date = datetime.fromisoformat(since_date.replace("Z", "+00:00"))
+            print(f"  Incremental mode: fetching videos after {since_date}")
+        except (ValueError, TypeError):
+            pass
+    if max_days and not cutoff_date:
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=max_days)
 
     # Step 1: Get uploads playlist for each channel (parallel)

@@ -8,12 +8,16 @@ from datetime import date
 from pathlib import Path
 
 from ..config import PHASE_ORDER
-from ..models import Video, save_checkpoint, load_checkpoint
+from ..models import Video, save_checkpoint, load_checkpoint, video_to_dict
 from ..scraper import scrape_notifications
 from ..enricher import enrich_videos_innertube, download_thumbnails
 from ..categorizer import categorize_and_rank
 from ..vault_generator import generate_vault
 from ..api_scraper import scrape_via_api
+from ..run_state import (
+    is_first_run, get_last_video_date, get_last_run_video_ids,
+    get_estimated_new_videos, get_daily_median, update_after_run,
+)
 
 
 def _save_channels_json(channels_map: dict[str, str]) -> None:
@@ -51,16 +55,36 @@ def handle_run(args: argparse.Namespace) -> None:
     else:
         videos = []
 
+    # Incremental run detection
+    first_run = is_first_run()
+    last_date = get_last_video_date()
+    prev_ids = get_last_run_video_ids()
+    if first_run:
+        print("First run detected — fetching all available notifications")
+    else:
+        median = get_daily_median()
+        estimate = get_estimated_new_videos(last_date)
+        print(f"Incremental run — last video: {last_date}")
+        print(f"  Daily median: {median:.1f} videos/day, estimated new: ~{estimate}")
+
     # Phase 1: Scrape
     if completed_phase >= PHASE_ORDER["scraping"]:
         print("Skipping scraping (already completed in checkpoint)")
     else:
         if args.source == "api":
             print("Phase 1: Scraping YouTube via Data API v3...")
+            since = None if first_run else last_date
             videos = scrape_via_api(
                 max_days=args.max_days,
                 max_videos=args.max_videos,
+                since_date=since,
             )
+            # Dedup against previous run
+            if prev_ids and videos:
+                pre_dedup = len(videos)
+                videos = [v for v in videos if v.video_id not in prev_ids]
+                if pre_dedup != len(videos):
+                    print(f"  Deduped: {pre_dedup - len(videos)} overlap with previous run")
             if not videos:
                 print("No videos found. Nothing to catalog.")
                 return
@@ -125,4 +149,15 @@ def handle_run(args: argparse.Namespace) -> None:
     print("Phase 4: Generating Obsidian vault...")
     generate_vault(videos, run_dir,
                    mermaid_thumbnails=not args.no_mermaid_thumbnails)
-    print(f"Done! Vault generated at {run_dir}/")
+
+    # Update run state for incremental tracking
+    stats = update_after_run(
+        [video_to_dict(v) for v in videos],
+        run_date,
+    )
+    print(f"\nDone! Vault generated at {run_dir}/")
+    print(f"  Videos: {stats['total_videos']} total, {stats['new_videos']} new")
+    if stats['overlap_with_previous']:
+        print(f"  Overlap with previous run: {stats['overlap_with_previous']}")
+    print(f"  Daily median: {stats['daily_median']:.1f} videos/day")
+    print(f"  Next run estimate: ~{stats['estimated_next_run']} videos")
