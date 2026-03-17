@@ -61,43 +61,58 @@ def download_thumbnails(videos: list[Video], run_dir: str) -> None:
             print(f"Warning: Failed to download thumbnail for {v.video_id}: {e}", file=sys.stderr)
 
 
-def enrich_videos_innertube(videos: list[Video]) -> list[Video]:
-    """Enrich videos using YouTube's InnerTube player API (no auth needed)."""
-    for i, v in enumerate(videos):
-        try:
-            def _fetch_video(vid=v.video_id):
-                body = json.dumps({
-                    "context": {"client": {"clientName": "WEB", "clientVersion": "2.20260316.01.00"}},
-                    "videoId": vid,
-                }).encode()
-                req = urllib.request.Request(
-                    INNERTUBE_URL,
-                    data=body,
-                    headers={"Content-Type": "application/json"},
-                )
-                resp = urllib.request.urlopen(req, timeout=10)
-                return json.loads(resp.read())
-
-            result = retry(_fetch_video, max_retries=3, delay=1, backoff=2)
-            details = result.get("videoDetails", {})
-            micro = result.get("microformat", {}).get("playerMicroformatRenderer", {})
-
-            v.duration_seconds = int(details.get("lengthSeconds", 0)) or None
-            v.view_count = int(details.get("viewCount", 0)) or None
-            v.description = (details.get("shortDescription", "") or "")[:500]
-            v.upload_date = micro.get("uploadDate", micro.get("publishDate", ""))
-            v.thumbnail_url = (
-                details.get("thumbnail", {}).get("thumbnails", [{}])[-1].get("url", "")
+def _enrich_single_video(v: Video) -> None:
+    """Enrich a single video via InnerTube. Modifies the Video in-place."""
+    try:
+        def _fetch():
+            body = json.dumps({
+                "context": {"client": {"clientName": "WEB", "clientVersion": "2.20260316.01.00"}},
+                "videoId": v.video_id,
+            }).encode()
+            req = urllib.request.Request(
+                INNERTUBE_URL,
+                data=body,
+                headers={"Content-Type": "application/json"},
             )
-            v.is_live = details.get("isLiveContent", False)
-            v.is_short = (v.duration_seconds or 0) > 0 and (v.duration_seconds or 0) < 60
-            v.channel_id = details.get("channelId")
+            resp = urllib.request.urlopen(req, timeout=10)
+            return json.loads(resp.read())
 
-            if (i + 1) % 20 == 0:
-                print(f"    {i+1}/{len(videos)} enriched...")
-            time.sleep(0.05)  # Be polite
-        except Exception as e:
-            print(f"  Warning: Failed to enrich {v.video_id}: {e}", file=sys.stderr)
+        result = retry(_fetch, max_retries=3, delay=1, backoff=2)
+        details = result.get("videoDetails", {})
+        micro = result.get("microformat", {}).get("playerMicroformatRenderer", {})
+
+        v.duration_seconds = int(details.get("lengthSeconds", 0)) or None
+        v.view_count = int(details.get("viewCount", 0)) or None
+        v.description = (details.get("shortDescription", "") or "")[:500]
+        v.upload_date = micro.get("uploadDate", micro.get("publishDate", ""))
+        v.thumbnail_url = (
+            details.get("thumbnail", {}).get("thumbnails", [{}])[-1].get("url", "")
+        )
+        v.is_live = details.get("isLiveContent", False)
+        v.is_short = (v.duration_seconds or 0) > 0 and (v.duration_seconds or 0) < 60
+        v.channel_id = details.get("channelId")
+    except Exception as e:
+        print(f"  Warning: Failed to enrich {v.video_id}: {e}", file=sys.stderr)
+
+
+def enrich_videos_innertube(videos: list[Video], max_workers: int = 10) -> list[Video]:
+    """Enrich videos using YouTube's InnerTube player API (no auth needed).
+
+    Uses concurrent threads for speed. InnerTube is stateless (no shared
+    browser), so parallel requests are safe.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    done = 0
+    total = len(videos)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_enrich_single_video, v): v for v in videos}
+        for future in as_completed(futures):
+            done += 1
+            if done % 50 == 0 or done == total:
+                print(f"    {done}/{total} enriched...")
+            future.result()  # Propagate any unexpected exceptions
 
     return videos
 

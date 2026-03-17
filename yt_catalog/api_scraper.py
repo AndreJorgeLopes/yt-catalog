@@ -235,14 +235,17 @@ def scrape_via_api(max_days: int | None = None, max_videos: int | None = None) -
     if max_days:
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=max_days)
 
-    # Step 1: Get uploads playlist for each channel
+    # Step 1: Get uploads playlist for each channel (parallel)
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     print(f"  Fetching upload playlists for {len(channel_ids)} channels...")
-    all_video_ids: list[str] = []
-    for i, cid in enumerate(channel_ids):
+
+    def _fetch_channel_videos(cid: str) -> list[str]:
         playlist_id = _get_channel_uploads_playlist(cid)
         if not playlist_id:
-            continue
+            return []
         items = _get_recent_playlist_items(playlist_id, max_results=5)
+        vids = []
         for item in items:
             vid = item.get("contentDetails", {}).get("videoId")
             published = item.get("snippet", {}).get("publishedAt", "")
@@ -254,9 +257,19 @@ def scrape_via_api(max_days: int | None = None, max_videos: int | None = None) -
                             continue
                     except ValueError:
                         pass
-                all_video_ids.append(vid)
-        if (i + 1) % 10 == 0:
-            print(f"    {i+1}/{len(channel_ids)} channels processed...")
+                vids.append(vid)
+        return vids
+
+    all_video_ids: list[str] = []
+    done = 0
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures = {pool.submit(_fetch_channel_videos, cid): cid for cid in channel_ids}
+        for future in as_completed(futures):
+            done += 1
+            vids = future.result()
+            all_video_ids.extend(vids)
+            if done % 20 == 0 or done == len(channel_ids):
+                print(f"    {done}/{len(channel_ids)} channels processed...")
 
     # Deduplicate while preserving order
     all_video_ids = list(dict.fromkeys(all_video_ids))
