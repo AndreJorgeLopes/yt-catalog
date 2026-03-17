@@ -20,6 +20,80 @@ from ..run_state import (
 )
 
 
+def _first_run_prompt(args: argparse.Namespace) -> tuple[str, int | None, int | None]:
+    """Interactive prompt for first-run bootstrap strategy.
+
+    Returns (source, max_days, max_videos).
+    Only prompts if the user didn't already specify --source, --max-days, or --max-videos.
+    """
+    import sys
+    # Skip prompt if user passed explicit flags or if not interactive (tests, CI)
+    if args.max_days is not None or args.max_videos is not None:
+        return args.source, args.max_days, args.max_videos
+    if not sys.stdin.isatty():
+        return args.source, args.max_days, args.max_videos
+
+    print("=" * 55)
+    print("  Welcome to yt-catalog! This is your first run.")
+    print("=" * 55)
+    print()
+    print("How would you like to fetch your YouTube notifications?")
+    print()
+    print("  [1] YouTube API — specify days to look back")
+    print("      Best for: getting started quickly")
+    print()
+    print("  [2] YouTube API — specify notification count")
+    print("      Tip: check your YouTube bell icon for the")
+    print("      exact unread count, then enter that number")
+    print()
+    print("  [3] Chrome integration (Claude CLI required)")
+    print("      Reads the actual bell dropdown via browser")
+    print("      automation. Most accurate but slowest.")
+    print()
+
+    while True:
+        choice = input("Choose [1/2/3] (default: 1): ").strip() or "1"
+        if choice in ("1", "2", "3"):
+            break
+        print("  Please enter 1, 2, or 3.")
+
+    if choice == "1":
+        while True:
+            days_str = input("How many days back? (default: 30): ").strip() or "30"
+            try:
+                days = int(days_str)
+                if days > 0:
+                    break
+            except ValueError:
+                pass
+            print("  Please enter a positive number.")
+        return "api", days, None
+
+    elif choice == "2":
+        print()
+        print("  Go to youtube.com and check the number on your")
+        print("  notification bell icon (e.g., '246').")
+        print()
+        while True:
+            count_str = input("Number of notifications to fetch: ").strip()
+            try:
+                count = int(count_str)
+                if count > 0:
+                    break
+            except ValueError:
+                pass
+            print("  Please enter a positive number.")
+        return "api", None, count
+
+    else:  # choice == "3"
+        print()
+        print("  Make sure Chrome is open with the claude-in-chrome")
+        print("  extension active and you're logged into YouTube.")
+        print()
+        input("  Press Enter when ready...")
+        return "chrome", None, None
+
+
 def _save_channels_json(channels_map: dict[str, str]) -> None:
     """Save channel name->ID mapping to channels.json for future API runs."""
     channels_file = Path.cwd() / "channels.json"
@@ -59,8 +133,18 @@ def handle_run(args: argparse.Namespace) -> None:
     first_run = is_first_run()
     last_date = get_last_video_date()
     prev_ids = get_last_run_video_ids()
+
+    if first_run and not args.from_checkpoint:
+        # Interactive first-run setup — let the user choose how to bootstrap
+        source, max_days, max_videos = _first_run_prompt(args)
+        args.source = source
+        if max_days is not None:
+            args.max_days = max_days
+        if max_videos is not None:
+            args.max_videos = max_videos
+
     if first_run:
-        print("First run detected — fetching all available notifications")
+        print("First run — fetching notifications")
     else:
         median = get_daily_median()
         estimate = get_estimated_new_videos(last_date)
