@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "yt-catalog"
+version = "0.1.0"
+description = "Scrape YouTube notifications, categorize with AI, generate an Obsidian vault"
+requires-python = ">=3.12"
+license = "MIT"
+
+[project.scripts]
+yt-catalog = "yt_catalog.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

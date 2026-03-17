@@ -9,7 +9,7 @@ from typing import Callable, TypeVar
 
 def load_dotenv(dotenv_path: str | None = None) -> None:
     """Load .env file into os.environ. No-op if file doesn't exist."""
-    path = Path(dotenv_path) if dotenv_path else Path(__file__).parent / ".env"
+    path = Path(dotenv_path) if dotenv_path else Path.cwd() / ".env"
     if not path.exists():
         return
     for line in path.read_text().splitlines():

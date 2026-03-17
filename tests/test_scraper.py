@@ -1,5 +1,5 @@
 import json
-from scraper import build_scraper_prompt, parse_scraper_output
+from yt_catalog.scraper import build_scraper_prompt, parse_scraper_output
 
 def test_scraper_prompt_no_limits():
     prompt = build_scraper_prompt(max_days=None, max_videos=None)

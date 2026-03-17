@@ -5,8 +5,8 @@ from datetime import date
 from unittest.mock import patch, MagicMock
 
 import pytest
-from models import Video, load_checkpoint
-from cataloger import main
+from yt_catalog.models import Video, load_checkpoint
+from yt_catalog.cataloger import main
 
 
 MOCK_SCRAPER_OUTPUT = json.dumps([
@@ -81,8 +81,8 @@ def test_full_pipeline_chrome_source(tmp_path, monkeypatch):
     # Note: scraper and categorizer both use subprocess, which is the same module object.
     # Patch subprocess.run once at the top level to avoid the second patch overriding the first.
     with patch("subprocess.run", side_effect=_mock_subprocess), \
-         patch("enricher.urllib.request.urlopen", side_effect=_mock_innertube_urlopen), \
-         patch("enricher.urllib.request.urlretrieve"):
+         patch("yt_catalog.enricher.urllib.request.urlopen", side_effect=_mock_innertube_urlopen), \
+         patch("yt_catalog.enricher.urllib.request.urlretrieve"):
         main(["--no-mermaid-thumbnails"])
 
     run_dir = tmp_path / "vault" / "runs" / date.today().isoformat()
@@ -140,8 +140,8 @@ def test_full_pipeline_filters_livestreams_after_enrichment(tmp_path, monkeypatc
         return m
 
     with patch("subprocess.run", side_effect=mock_subprocess), \
-         patch("enricher.urllib.request.urlopen", side_effect=innertube_mock), \
-         patch("enricher.urllib.request.urlretrieve"):
+         patch("yt_catalog.enricher.urllib.request.urlopen", side_effect=innertube_mock), \
+         patch("yt_catalog.enricher.urllib.request.urlretrieve"):
         main(["--no-mermaid-thumbnails"])
 
     run_dir = tmp_path / "vault" / "runs" / date.today().isoformat()
@@ -181,8 +181,8 @@ def test_full_pipeline_api_source(tmp_path, monkeypatch):
         m.stdout = categorizer_output
         return m
 
-    with patch("cataloger.scrape_via_api", return_value=api_videos), \
-         patch("enricher.urllib.request.urlretrieve"), \
+    with patch("yt_catalog.cataloger.scrape_via_api", return_value=api_videos), \
+         patch("yt_catalog.enricher.urllib.request.urlretrieve"), \
          patch("subprocess.run", side_effect=mock_categorizer):
         main(["--source", "api", "--no-mermaid-thumbnails"])
 

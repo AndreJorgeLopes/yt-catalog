@@ -1,4 +1,4 @@
-from config import CATEGORIES, BASE_SCORES, DURATION_THRESHOLDS, PHASE_ORDER, get_duration_group
+from yt_catalog.config import CATEGORIES, BASE_SCORES, DURATION_THRESHOLDS, PHASE_ORDER, get_duration_group
 
 def test_categories_exist():
     assert "programming" in CATEGORIES

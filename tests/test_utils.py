@@ -2,7 +2,7 @@
 import time
 from unittest.mock import patch
 import pytest
-from utils import retry
+from yt_catalog.utils import retry
 
 
 def test_retry_succeeds_on_first_try():
@@ -28,7 +28,7 @@ def test_retry_succeeds_on_second_try():
             raise ValueError("temporary failure")
         return "ok"
 
-    with patch("utils.time.sleep"):
+    with patch("yt_catalog.utils.time.sleep"):
         result = retry(fn, max_retries=3, delay=1, backoff=2)
     assert result == "ok"
     assert len(calls) == 2
@@ -42,7 +42,7 @@ def test_retry_exhausted_raises_last_exception():
         calls.append(1)
         raise RuntimeError(f"fail #{len(calls)}")
 
-    with patch("utils.time.sleep"):
+    with patch("yt_catalog.utils.time.sleep"):
         with pytest.raises(RuntimeError, match="fail #3"):
             retry(fn, max_retries=3, delay=1, backoff=2)
     assert len(calls) == 3
@@ -59,7 +59,7 @@ def test_retry_uses_exponential_backoff():
             raise ValueError("fail")
         return "done"
 
-    with patch("utils.time.sleep", side_effect=lambda d: sleep_calls.append(d)):
+    with patch("yt_catalog.utils.time.sleep", side_effect=lambda d: sleep_calls.append(d)):
         result = retry(fn, max_retries=3, delay=2, backoff=3)
 
     assert result == "done"
@@ -89,7 +89,7 @@ def test_retry_prints_retry_message(capsys):
             raise ValueError("network error")
         return "ok"
 
-    with patch("utils.time.sleep"):
+    with patch("yt_catalog.utils.time.sleep"):
         retry(fn, max_retries=3, delay=1, backoff=2)
 
     captured = capsys.readouterr()

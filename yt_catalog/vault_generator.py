@@ -2,8 +2,8 @@ from __future__ import annotations
 import re as _re
 from pathlib import Path
 
-from models import Video
-from config import CATEGORIES, CATEGORY_EMOJIS, DURATION_THRESHOLDS
+from .models import Video
+from .config import CATEGORIES, CATEGORY_EMOJIS, DURATION_THRESHOLDS
 
 DURATION_GROUP_LABELS = {
     "super-small": "Super Small (<5 min)",

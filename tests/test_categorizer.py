@@ -1,5 +1,5 @@
-from models import Video
-from categorizer import build_categorizer_prompt, parse_categorizer_output
+from yt_catalog.models import Video
+from yt_catalog.categorizer import build_categorizer_prompt, parse_categorizer_output
 
 def test_categorizer_prompt_includes_videos():
     videos = [

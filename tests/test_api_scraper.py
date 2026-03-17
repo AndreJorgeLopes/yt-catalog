@@ -5,7 +5,7 @@ import sys
 from unittest.mock import patch, MagicMock
 
 import pytest
-from api_scraper import (
+from yt_catalog.api_scraper import (
     _parse_iso_duration,
     _best_thumbnail,
     _get_subscribed_channel_ids,
@@ -81,30 +81,28 @@ def test_get_subscribed_channel_ids_from_list(tmp_path, monkeypatch):
     channels_file = tmp_path / "channels.json"
     channels_file.write_text(json.dumps(["UC123", "UC456"]))
     monkeypatch.chdir(tmp_path)
-    # Patch os.path.dirname to return tmp_path
-    with patch("api_scraper.os.path.dirname", return_value=str(tmp_path)):
-        ids = _get_subscribed_channel_ids()
+    ids = _get_subscribed_channel_ids()
     assert ids == ["UC123", "UC456"]
 
-def test_get_subscribed_channel_ids_from_dict(tmp_path):
+def test_get_subscribed_channel_ids_from_dict(tmp_path, monkeypatch):
     channels_file = tmp_path / "channels.json"
     channels_file.write_text(json.dumps({"Chan A": "UC111", "Chan B": "UC222"}))
-    with patch("api_scraper.os.path.dirname", return_value=str(tmp_path)):
-        ids = _get_subscribed_channel_ids()
+    monkeypatch.chdir(tmp_path)
+    ids = _get_subscribed_channel_ids()
     assert set(ids) == {"UC111", "UC222"}
 
-def test_get_subscribed_channel_ids_no_file(tmp_path):
-    with patch("api_scraper.os.path.dirname", return_value=str(tmp_path)):
-        ids = _get_subscribed_channel_ids()
+def test_get_subscribed_channel_ids_no_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    ids = _get_subscribed_channel_ids()
     assert ids == []
 
 
 # ── scrape_via_api ─────────────────────────────────────────────────────────────
 
-def test_scrape_via_api_no_channels_returns_empty(tmp_path, capsys):
+def test_scrape_via_api_no_channels_returns_empty(tmp_path, monkeypatch, capsys):
     """Returns empty list and prints message when no channel IDs found."""
-    with patch("api_scraper.os.path.dirname", return_value=str(tmp_path)):
-        result = scrape_via_api()
+    monkeypatch.chdir(tmp_path)
+    result = scrape_via_api()
     assert result == []
     captured = capsys.readouterr()
     assert "channels.json" in captured.err
@@ -138,10 +136,11 @@ def _make_video_api_item(video_id: str, duration: str = "PT10M", is_live: bool =
     return item
 
 
-def test_scrape_via_api_filters_shorts_and_live(tmp_path):
+def test_scrape_via_api_filters_shorts_and_live(tmp_path, monkeypatch):
     """API scraper filters out shorts (<60s) and livestreams."""
     channels_file = tmp_path / "channels.json"
     channels_file.write_text(json.dumps(["UC_TEST"]))
+    monkeypatch.chdir(tmp_path)
 
     api_responses = {
         "channels": {"items": [{"contentDetails": {"relatedPlaylists": {"uploads": "PL_TEST"}}}]},
@@ -160,9 +159,8 @@ def test_scrape_via_api_filters_shorts_and_live(tmp_path):
     def mock_api_get(endpoint, params):
         return api_responses.get(endpoint, {})
 
-    with patch("api_scraper.os.path.dirname", return_value=str(tmp_path)), \
-         patch("api_scraper._api_get", side_effect=mock_api_get), \
-         patch("api_scraper._get_api_key", return_value="fake-key"):
+    with patch("yt_catalog.api_scraper._api_get", side_effect=mock_api_get), \
+         patch("yt_catalog.api_scraper._get_api_key", return_value="fake-key"):
         result = scrape_via_api()
 
     assert len(result) == 1

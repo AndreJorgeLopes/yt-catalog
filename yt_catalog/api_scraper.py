@@ -7,9 +7,10 @@ import sys
 import urllib.request
 import urllib.parse
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-from models import Video
-from utils import retry
+from .models import Video
+from .utils import retry
 
 API_BASE = "https://www.googleapis.com/youtube/v3"
 
@@ -39,7 +40,7 @@ def _api_get(endpoint: str, params: dict) -> dict:
 
 def _get_subscribed_channel_ids() -> list[str]:
     """Get channel IDs from channels.json (populated by chrome runs)."""
-    channels_file = os.path.join(os.path.dirname(__file__), "channels.json")
+    channels_file = str(Path.cwd() / "channels.json")
     if os.path.exists(channels_file):
         with open(channels_file) as f:
             data = json.load(f)

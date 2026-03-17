@@ -1,4 +1,4 @@
-from cataloger import parse_args
+from yt_catalog.cataloger import parse_args
 
 
 def test_parse_args_defaults():

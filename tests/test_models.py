@@ -1,5 +1,5 @@
 import os
-from models import Video, video_to_dict, video_from_dict, extract_json_array, CatalogRun, save_checkpoint, load_checkpoint
+from yt_catalog.models import Video, video_to_dict, video_from_dict, extract_json_array, CatalogRun, save_checkpoint, load_checkpoint
 
 def test_video_creation():
     v = Video(

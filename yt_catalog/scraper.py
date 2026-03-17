@@ -1,6 +1,6 @@
-from config import SCRAPER_PROMPT
+from .config import SCRAPER_PROMPT
 from urllib.parse import urlparse, parse_qs
-from models import Video, extract_json_array
+from .models import Video, extract_json_array
 import subprocess
 import sys
 

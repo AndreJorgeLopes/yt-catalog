@@ -1,6 +1,6 @@
 import os
-from models import Video
-from vault_generator import generate_category_file, generate_mermaid_graph, generate_index, generate_vault
+from yt_catalog.models import Video
+from yt_catalog.vault_generator import generate_category_file, generate_mermaid_graph, generate_index, generate_vault
 
 def _video(vid, title, channel, score, duration, group, tags, summary="Summary", upload="2026-03-14"):
     return Video(

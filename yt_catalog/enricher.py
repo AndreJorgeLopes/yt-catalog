@@ -6,9 +6,9 @@ import time
 import urllib.request
 from pathlib import Path
 
-from models import Video, extract_json_array
-from config import ENRICHER_PROMPT
-from utils import retry
+from .models import Video, extract_json_array
+from .config import ENRICHER_PROMPT
+from .utils import retry
 
 INNERTUBE_URL = (
     "https://www.youtube.com/youtubei/v1/player"

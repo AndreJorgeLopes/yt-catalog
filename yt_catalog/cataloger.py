@@ -8,18 +8,18 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from utils import load_dotenv
+from .utils import load_dotenv
 
 # Load .env before anything else touches env vars
 load_dotenv()
 
-from config import PHASE_ORDER
-from models import Video, save_checkpoint, load_checkpoint
-from scraper import scrape_notifications
-from enricher import enrich_videos, enrich_videos_innertube, download_thumbnails
-from categorizer import categorize_and_rank
-from vault_generator import generate_vault
-from api_scraper import scrape_via_api
+from .config import PHASE_ORDER
+from .models import Video, save_checkpoint, load_checkpoint
+from .scraper import scrape_notifications
+from .enricher import enrich_videos, enrich_videos_innertube, download_thumbnails
+from .categorizer import categorize_and_rank
+from .vault_generator import generate_vault
+from .api_scraper import scrape_via_api
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -44,7 +44,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def _save_channels_json(channels_map: dict[str, str]) -> None:
     """Save channel name→ID mapping to channels.json for future API runs."""
-    channels_file = Path(__file__).parent / "channels.json"
+    channels_file = Path.cwd() / "channels.json"
     existing: dict = {}
     if channels_file.exists():
         try:
@@ -65,7 +65,7 @@ def discover_channels(checkpoint_path: str | None = None) -> None:
     2. For videos missing channel_id, calls InnerTube player API to resolve it
     3. Saves {channel_name: channel_id} to channels.json
     """
-    from enricher import enrich_videos_innertube
+    from .enricher import enrich_videos_innertube
 
     # Find checkpoint
     if checkpoint_path and checkpoint_path != "auto":

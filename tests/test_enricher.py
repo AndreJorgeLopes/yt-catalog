@@ -1,7 +1,7 @@
 import json
 from unittest.mock import patch, MagicMock
-from models import Video
-from enricher import batch_videos, build_enricher_prompt, parse_enricher_output, enrich_videos_innertube
+from yt_catalog.models import Video
+from yt_catalog.enricher import batch_videos, build_enricher_prompt, parse_enricher_output, enrich_videos_innertube
 
 
 def _make_video(vid: str) -> Video:
@@ -85,7 +85,7 @@ def _mock_urlopen(url_request, timeout=None):
 def test_innertube_enrichment_basic():
     """InnerTube enrichment populates duration, view_count, upload_date, thumbnail_url."""
     videos = [_make_video("abc123")]
-    with patch("enricher.urllib.request.urlopen", side_effect=_mock_urlopen):
+    with patch("yt_catalog.enricher.urllib.request.urlopen", side_effect=_mock_urlopen):
         enriched = enrich_videos_innertube(videos)
     assert enriched[0].duration_seconds == 300
     assert enriched[0].view_count == 1000
@@ -108,7 +108,7 @@ def test_innertube_enrichment_marks_live():
         mock_resp.read.return_value = _json.dumps(resp_data).encode()
         return mock_resp
 
-    with patch("enricher.urllib.request.urlopen", side_effect=_mock_live_urlopen):
+    with patch("yt_catalog.enricher.urllib.request.urlopen", side_effect=_mock_live_urlopen):
         enriched = enrich_videos_innertube(videos)
     assert enriched[0].is_live is True
 
@@ -126,7 +126,7 @@ def test_innertube_enrichment_marks_short():
         mock_resp.read.return_value = _json.dumps(resp_data).encode()
         return mock_resp
 
-    with patch("enricher.urllib.request.urlopen", side_effect=_mock_short_urlopen):
+    with patch("yt_catalog.enricher.urllib.request.urlopen", side_effect=_mock_short_urlopen):
         enriched = enrich_videos_innertube(videos)
     assert enriched[0].is_short is True
     assert enriched[0].duration_seconds == 45
@@ -135,7 +135,7 @@ def test_innertube_enrichment_marks_short():
 def test_innertube_enrichment_handles_failure_gracefully():
     """Failed InnerTube requests leave video unchanged rather than crashing."""
     videos = [_make_video("badid")]
-    with patch("enricher.urllib.request.urlopen", side_effect=Exception("network error")):
+    with patch("yt_catalog.enricher.urllib.request.urlopen", side_effect=Exception("network error")):
         enriched = enrich_videos_innertube(videos)
     # Should return videos unchanged, not crash
     assert len(enriched) == 1

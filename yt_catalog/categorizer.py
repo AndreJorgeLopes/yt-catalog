@@ -3,8 +3,8 @@ import json
 import subprocess
 import sys
 
-from models import Video, extract_json_array
-from config import CATEGORIZER_PROMPT, get_duration_group
+from .models import Video, extract_json_array
+from .config import CATEGORIZER_PROMPT, get_duration_group
 
 def build_categorizer_prompt(videos: list[Video]) -> str:
     video_list = json.dumps(
