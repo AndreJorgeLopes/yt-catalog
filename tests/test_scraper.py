@@ -1,3 +1,4 @@
+import json
 from scraper import build_scraper_prompt, parse_scraper_output
 
 def test_scraper_prompt_no_limits():
@@ -34,3 +35,20 @@ def test_parse_scraper_output_dedup():
     raw = '[{"title": "V1", "channel": "C", "url": "https://www.youtube.com/watch?v=abc", "time": "1d"}, {"title": "V1 dup", "channel": "C", "url": "https://www.youtube.com/watch?v=abc", "time": "1d"}]'
     videos = parse_scraper_output(raw)
     assert len(videos) == 1
+
+def test_parse_scraper_output_filters_livestream():
+    """Entries explicitly marked is_live should be excluded."""
+    raw = json.dumps([
+        {"title": "Normal Video", "channel": "C", "url": "https://www.youtube.com/watch?v=normal1", "time": "1d"},
+        {"title": "Live Stream", "channel": "C", "url": "https://www.youtube.com/watch?v=live1", "time": "1d", "is_live": True},
+    ])
+    videos = parse_scraper_output(raw)
+    assert len(videos) == 1
+    assert videos[0].video_id == "normal1"
+
+def test_parse_scraper_output_video_has_is_live_false():
+    """Parsed videos default to is_live=False."""
+    raw = '[{"title": "V", "channel": "C", "url": "https://www.youtube.com/watch?v=vid1", "time": "1d"}]'
+    videos = parse_scraper_output(raw)
+    assert len(videos) == 1
+    assert videos[0].is_live is False

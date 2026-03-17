@@ -30,6 +30,9 @@ def parse_scraper_output(raw: str) -> list[Video]:
         url = entry.get("url", "")
         if "/shorts/" in url:
             continue
+        # Filter livestreams: entries explicitly marked as live
+        if entry.get("is_live", False):
+            continue
         vid = _extract_video_id(url)
         if not vid:
             continue

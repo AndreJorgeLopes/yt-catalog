@@ -21,6 +21,7 @@ class Video:
     thumbnail_url: str | None = None
     thumbnail_path: str | None = None
     is_short: bool = False
+    is_live: bool = False
     category: str | None = None
     interest_score: int | None = None
     tags: list[str] = field(default_factory=list)

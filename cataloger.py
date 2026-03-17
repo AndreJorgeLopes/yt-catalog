@@ -62,13 +62,13 @@ def main(argv: list[str] | None = None) -> None:
         print("Phase 2: Enriching video metadata...")
         videos = enrich_videos(videos)
         pre_filter = len(videos)
-        videos = [v for v in videos if not v.is_short]
-        shorts_removed = pre_filter - len(videos)
-        if shorts_removed:
-            print(f"  Removed {shorts_removed} Shorts")
+        videos = [v for v in videos if not v.is_short and not v.is_live]
+        filtered_count = pre_filter - len(videos)
+        if filtered_count:
+            print(f"  Removed {filtered_count} Shorts/Livestreams")
         print("  Downloading thumbnails...")
         download_thumbnails(videos, run_dir)
-        save_checkpoint(videos, run_dir, phase="enrichment", shorts_filtered=shorts_removed)
+        save_checkpoint(videos, run_dir, phase="enrichment", shorts_filtered=filtered_count)
         print(f"  Enriched {len(videos)} videos")
     else:
         print("Skipping enrichment (already completed in checkpoint)")
