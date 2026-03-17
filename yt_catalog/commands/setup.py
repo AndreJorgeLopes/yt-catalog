@@ -1,9 +1,8 @@
-"""Handler for `yt-catalog setup` — configure API key and OAuth credentials."""
+"""Handler for `yt-catalog setup` — configure OAuth credentials for YouTube API."""
 
 from __future__ import annotations
 import argparse
 import json
-import os
 import sys
 import urllib.parse
 import urllib.request
@@ -67,32 +66,10 @@ def _discover_subscriptions_oauth() -> dict[str, str]:
 
 def handle_setup(args: argparse.Namespace) -> None:
     print("=== YouTube Catalog Setup ===\n")
+    print("This sets up OAuth 2.0 for the YouTube Data API.")
+    print("(API key is loaded from .env — no setup needed for that)\n")
 
-    # Step 1: API key
-    existing_config = load_config()
-    api_key = os.environ.get("YOUTUBE_API_KEY") or existing_config.get("api_key")
-
-    if api_key:
-        print(f"API key found: {api_key[:8]}...")
-    else:
-        print("No YOUTUBE_API_KEY found.")
-        print("1. Go to https://console.cloud.google.com/apis/credentials")
-        print("2. Create an API Key with YouTube Data API v3 enabled")
-        api_key = input("\nAPI Key (or press Enter to skip): ").strip() or None
-
-    if args.api_key_only:
-        if api_key:
-            save_config(
-                client_id=existing_config.get("client_id", ""),
-                client_secret=existing_config.get("client_secret", ""),
-                api_key=api_key,
-            )
-            print(f"\nAPI key saved to {CONFIG_DIR}/config.json")
-        print("Setup complete (API key only mode).")
-        return
-
-    # Step 2: OAuth
-    print("\n--- OAuth Setup (unlocks automatic subscription discovery) ---")
+    print("--- OAuth Setup (unlocks automatic subscription discovery) ---")
     print("1. Go to https://console.cloud.google.com/apis/credentials")
     print("2. Create OAuth 2.0 Client ID (type: Desktop app)")
     print("3. Enter the client ID and secret below\n")
@@ -101,19 +78,16 @@ def handle_setup(args: argparse.Namespace) -> None:
     client_secret = input("Client Secret: ").strip()
 
     if not client_id or not client_secret:
-        print("Skipping OAuth (no credentials provided).")
-        if api_key:
-            save_config(client_id="", client_secret="", api_key=api_key)
-        print("Setup complete!")
+        print("No credentials provided. Setup cancelled.")
         return
 
-    # Save config before OAuth flow (needed for token refresh later)
-    save_config(client_id, client_secret, api_key)
+    # Save OAuth client credentials
+    save_config(client_id, client_secret)
 
     # Run OAuth flow
     authorize(client_id, client_secret)
 
-    # Step 3: Auto-discover channels via subscriptions API
+    # Auto-discover channels via subscriptions API
     if is_authenticated():
         print("\n--- Discovering subscribed channels ---")
         channels = _discover_subscriptions_oauth()

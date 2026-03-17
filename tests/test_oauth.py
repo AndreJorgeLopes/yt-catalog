@@ -32,11 +32,11 @@ def isolate_config(tmp_path, monkeypatch):
 # ── Config save/load ─────────────────────────────────────────────────────────
 
 def test_save_and_load_config(isolate_config):
-    save_config("my-client-id", "my-secret", api_key="my-api-key")
+    save_config("my-client-id", "my-secret")
     config = load_config()
     assert config["client_id"] == "my-client-id"
     assert config["client_secret"] == "my-secret"
-    assert config["api_key"] == "my-api-key"
+    assert "api_key" not in config
 
 
 def test_load_config_missing(isolate_config):
@@ -44,15 +44,11 @@ def test_load_config_missing(isolate_config):
     assert config == {}
 
 
-def test_save_config_preserves_api_key(isolate_config):
-    save_config("id1", "secret1", api_key="key1")
-    save_config("id2", "secret2")  # no api_key
+def test_save_config_overwrites_previous(isolate_config):
+    save_config("id1", "secret1")
+    save_config("id2", "secret2")
     config = load_config()
     assert config["client_id"] == "id2"
-    # api_key is not passed, but save_config with None should not overwrite
-    # Actually, save_config only sets api_key when not None
-    # The previous api_key is lost because we overwrite the whole file
-    # Let's verify the actual behavior
     assert config["client_secret"] == "secret2"
 
 

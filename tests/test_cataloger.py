@@ -19,7 +19,7 @@ def test_parse_setup_help(capsys):
         main(["setup", "--help"])
     assert exc_info.value.code == 0
     captured = capsys.readouterr()
-    assert "--api-key-only" in captured.out
+    assert "setup" in captured.out
 
 
 def test_parse_discover_help(capsys):

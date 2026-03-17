@@ -26,7 +26,6 @@ def main(argv: list[str] | None = None) -> None:
 
     # yt-catalog setup
     setup_parser = subparsers.add_parser("setup", help="Configure YouTube API OAuth and discover channels")
-    setup_parser.add_argument("--api-key-only", action="store_true", help="Skip OAuth, just set API key")
 
     # yt-catalog discover
     discover_parser = subparsers.add_parser("discover", help="Discover channel IDs from existing data")

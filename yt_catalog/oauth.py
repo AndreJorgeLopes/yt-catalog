@@ -24,19 +24,10 @@ AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 
 
-def save_config(client_id: str, client_secret: str, api_key: str | None = None) -> None:
-    """Save OAuth client credentials (and optionally API key) to config file."""
+def save_config(client_id: str, client_secret: str) -> None:
+    """Save OAuth client credentials to config file."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    data: dict = {}
-    if CONFIG_FILE.exists():
-        try:
-            data = json.loads(CONFIG_FILE.read_text())
-        except Exception:
-            pass
-    data["client_id"] = client_id
-    data["client_secret"] = client_secret
-    if api_key is not None:
-        data["api_key"] = api_key
+    data = {"client_id": client_id, "client_secret": client_secret}
     CONFIG_FILE.write_text(json.dumps(data, indent=2))
 
 
