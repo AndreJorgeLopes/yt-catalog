@@ -7,3 +7,4 @@ channels.json
 *.egg-info/
 dist/
 build/
+vault/benchmark/
