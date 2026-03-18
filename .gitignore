@@ -8,3 +8,17 @@ channels.json
 dist/
 build/
 vault/benchmark/
+
+# personal / per-machine runtime data (siblings of channels.json)
+bell_all_channels.json
+catalog_state.json
+vault/run_state.json
+vault/subscriptions.md
+vault/2026-04-23/
+
+# third-party Obsidian plugins (installed via Obsidian, not our source)
+vault/.obsidian/plugins/media-extended/
+vault/.obsidian/plugins/obsidian-excalidraw-plugin/
+vault/.obsidian/plugins/multi-state-checkbox-switcher/
+vault/.obsidian/plugins/obsidian-checkbox3states-plugin/
+vault/.obsidian/workspace.json
