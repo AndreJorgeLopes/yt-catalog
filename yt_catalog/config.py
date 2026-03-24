@@ -18,14 +18,37 @@ FAVORITE_CHANNELS = [
     "evan and katelyn", "mrwhosetheboss", "bernardo almeida",
 ]
 
+# Single source of truth for video-length grouping (seconds). Five standardized
+# buckets, shared by the by-category folder, the index sub-sections, and the
+# Excalidraw board. Order = shortest -> longest.
 DURATION_THRESHOLDS = {
-    "super-small": (0, 300),
-    "small": (300, 600),
-    "long": (600, 3000),
-    "super-big": (3000, float("inf")),
+    "super-small": (0, 300),       # < 5 min
+    "small": (300, 600),           # 5-10 min
+    "medium": (600, 1200),         # 10-20 min
+    "long": (1200, 3000),          # 20-50 min
+    "super-big": (3000, float("inf")),  # 50 min+
 }
 
-PHASE_ORDER = {"scraping": 1, "enrichment": 2, "categorization": 3}
+DURATION_GROUP_ORDER = ["super-small", "small", "medium", "long", "super-big"]
+
+DURATION_GROUP_LABELS = {
+    "super-small": "Super Small (<5 min)",
+    "small": "Small (5-10 min)",
+    "medium": "Medium (10-20 min)",
+    "long": "Long (20-50 min)",
+    "super-big": "Super Big (>50 min)",
+}
+
+# Compact labels for tight spaces (Excalidraw headers).
+DURATION_GROUP_SHORT = {
+    "super-small": "<5 min",
+    "small": "5-10 min",
+    "medium": "10-20 min",
+    "long": "20-50 min",
+    "super-big": "50 min+",
+}
+
+PHASE_ORDER = {"scraping": 1, "enrichment": 2, "categorization": 3, "complete": 4}
 
 CATEGORY_EMOJIS = {
     "programming": "\U0001f4bb",
@@ -38,27 +61,33 @@ CATEGORY_EMOJIS = {
     "sleep": "\U0001f634",
 }
 
-SCRAPER_PROMPT = """Navigate to https://www.youtube.com/feed/notifications
+SCRAPER_PROMPT = """Go to https://www.youtube.com
 
-IMPORTANT: Do NOT click the notification bell icon. Navigate directly to the URL above.
+IMPORTANT: Do NOT open https://www.youtube.com/feed/notifications — that page
+renders blank. Read the notifications from the bell DROPDOWN instead.
 
-Then extract ALL notification entries from the page by:
-1. Use javascript_tool to query the DOM for notification entries
-2. Scroll down and re-extract after each scroll to get more entries
-3. Keep scrolling until no new entries appear (3 consecutive scrolls with same count)
+Open the notifications panel by clicking the bell button in the top-right
+header (the button with aria-label "Notifications" — a `button#button` inside
+`ytd-notification-topbar-button-renderer`). Wait for the dropdown panel
+(`ytd-multi-page-menu-renderer`) to appear.
+
+Then extract every notification entry from the OPEN panel:
+1. Use javascript_tool to query all `ytd-notification-renderer` elements inside
+   the open panel.
+2. For each, read:
+   - title: the video title text
+   - channel: the channel name
+   - url: the video link (the anchor whose href contains "watch?v=")
+   - time: the relative timestamp (e.g., "3 days ago")
+3. Scroll INSIDE the panel (it has its own scroll container, not the page) to
+   load more, re-extracting until no new entries appear (3 stable scrolls).
 {limits_clause}
 
-For each notification, extract:
-- title: the video title text
-- channel: the channel name
-- url: the video URL (the href of the thumbnail link)
-- time: the relative timestamp (e.g., "3 days ago")
-
 Skip any entries that:
-- Don't have a video URL (community posts, live stream notifications)
+- Have no "watch?v=" video link (community posts, channel-only notices)
 - Have a URL containing "/shorts/"
 
-Return the results as a JSON array. Return ONLY the JSON array, no other text.
+Return ONLY a JSON array, no other text.
 Example format:
 [{{"title": "Video Title", "channel": "Channel Name", "url": "https://www.youtube.com/watch?v=...", "time": "3 days ago"}}]
 """
@@ -81,6 +110,66 @@ For each video, extract using javascript_tool or page reading:
 
 Return a JSON array with one object per video, in the same order as the input list.
 Return ONLY the JSON array, no other text.
+"""
+
+CHANNELS_PROMPT = """Navigate to https://www.youtube.com/feed/channels
+
+This page lists every channel you are subscribed to, each with a notification
+bell button that shows your setting: "All", "Personalized", or "None".
+
+Extract EVERY channel on the page:
+1. Use javascript_tool to query the subscription rows (each is a
+   `ytd-channel-renderer`).
+2. For each row read:
+   - id: the channel ID (a `UC...` value). Prefer an `a[href*="/channel/UC"]`
+     href; if the visible link is a `/@handle`, look for the channelId elsewhere
+     in the renderer (data attributes / nested links) and use it. Skip rows
+     where no `UC...` id can be found.
+   - title: the channel name text
+   - bell: the notification setting from the bell button — its `aria-label`
+     or visible text — normalized to one of: "All", "Personalized", "None".
+3. The page lazy-loads: scroll down and re-extract until the row count stops
+   growing (3 stable scrolls).
+
+Return ONLY a JSON array, no prose or markdown fences:
+[{{"id": "UC...", "title": "Channel Name", "bell": "All"}}]
+"""
+
+HISTORY_PROMPT = """Navigate to https://www.youtube.com/feed/history
+
+IMPORTANT: Do NOT click any item. Just read the DOM.
+
+Extract the user's watch history, stopping once you reach entries older than {since_date}.
+
+Approach:
+1. Use javascript_tool to query all `yt-lockup-view-model` elements inside
+   `ytd-item-section-renderer`. (NOTE: `ytd-video-renderer` on this page is
+   used ONLY for shorts — skip it.)
+2. For each `yt-lockup-view-model`, extract:
+   - video_id: parsed from `a[href*="watch?v="]` (the `v=` query param). Skip
+     entries without a `watch?v=` link.
+   - percent_watched: integer 0-100. Read from
+     `[class*="WatchedProgressBar"] > div` — the inline `style="width: N%"`
+     (sometimes `N.N%`). Round to int. If the element is missing, use 0.
+   - watched_on: the nearest preceding date header (`#title` text inside the
+     ancestor `ytd-item-section-renderer`) — values like "Today", "Yesterday",
+     weekday names ("Sunday"), short dates ("Apr 12"), or "Apr 12, 2026".
+     Skip any section whose header is literally "Shorts".
+3. To load more entries, do NOT rely on window.scrollTo — YouTube's history
+   page has a custom scroll container. Instead, locate the
+   `ytd-continuation-item-renderer` and call `scrollIntoView({block: 'end'})`
+   on it, then wait ~1.5s. Repeat.
+4. Stop scrolling when ANY of these is true:
+   - The most recently added date header parses to a date older than {since_date}.
+     ("Today"=today, "Yesterday"=today-1, weekday names = within the last 7
+     days, short dates like "Apr 12" default to the most recent matching year,
+     full dates like "Apr 12, 2026" parse directly.)
+   - 5 consecutive scrolls produce zero new entries.
+   - You've collected 500 entries (hard cap).
+
+Return ONLY a JSON array of entries in the format:
+[{{"video_id": "abc123", "percent_watched": 73, "watched_on": "Apr 15, 2026"}}]
+No prose, no markdown fences — just the array.
 """
 
 CATEGORIZER_PROMPT = """You are categorizing YouTube videos for a user with these interests:

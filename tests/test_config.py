@@ -12,8 +12,12 @@ def test_base_scores():
 def test_duration_thresholds():
     assert DURATION_THRESHOLDS["super-small"] == (0, 300)
     assert DURATION_THRESHOLDS["small"] == (300, 600)
-    assert DURATION_THRESHOLDS["long"] == (600, 3000)
+    assert DURATION_THRESHOLDS["medium"] == (600, 1200)
+    assert DURATION_THRESHOLDS["long"] == (1200, 3000)
     assert DURATION_THRESHOLDS["super-big"] == (3000, float("inf"))
+
+def test_duration_group_medium():
+    assert get_duration_group(900) == "medium"
 
 def test_phase_order():
     assert PHASE_ORDER["scraping"] < PHASE_ORDER["enrichment"]
