@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .models import Video, extract_json_array
 from .config import ENRICHER_PROMPT
-from .utils import retry
+from .utils import retry, progress_bar
 
 INNERTUBE_URL = (
     "https://www.youtube.com/youtubei/v1/player"
@@ -47,18 +47,29 @@ def parse_enricher_output(raw: str, batch: list[Video]) -> list[Video]:
     return batch
 
 
-def download_thumbnails(videos: list[Video], run_dir: str) -> None:
+def download_thumbnails(videos: list[Video], run_dir: str, max_workers: int = 12) -> None:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     thumb_dir = Path(run_dir) / "thumbnails"
     thumb_dir.mkdir(parents=True, exist_ok=True)
-    for v in videos:
-        if not v.thumbnail_url:
-            continue
+    targets = [v for v in videos if v.thumbnail_url]
+    total = len(targets)
+    if not total:
+        return
+
+    def _one(v: Video) -> None:
         dest = thumb_dir / f"{v.video_id}.jpg"
         try:
             urllib.request.urlretrieve(v.thumbnail_url, str(dest))
             v.thumbnail_path = str(dest)
         except Exception as e:
-            print(f"Warning: Failed to download thumbnail for {v.video_id}: {e}", file=sys.stderr)
+            print(f"\n  Warning: thumbnail failed for {v.video_id}: {e}", file=sys.stderr)
+
+    done = 0
+    progress_bar(0, total, "Thumbnails ")
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        for _ in as_completed([pool.submit(_one, v) for v in targets]):
+            done += 1
+            progress_bar(done, total, "Thumbnails ")
 
 
 def _enrich_single_video(v: Video) -> None:
@@ -106,12 +117,12 @@ def enrich_videos_innertube(videos: list[Video], max_workers: int = 10) -> list[
     done = 0
     total = len(videos)
 
+    progress_bar(0, total, "Enriching ")
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {pool.submit(_enrich_single_video, v): v for v in videos}
         for future in as_completed(futures):
             done += 1
-            if done % 50 == 0 or done == total:
-                print(f"    {done}/{total} enriched...")
+            progress_bar(done, total, "Enriching ")
             future.result()  # Propagate any unexpected exceptions
 
     return videos
