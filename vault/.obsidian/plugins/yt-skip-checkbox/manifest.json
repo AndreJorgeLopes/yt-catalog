@@ -1,0 +1,9 @@
+{
+  "id": "yt-skip-checkbox",
+  "name": "YT Catalog Skip Checkbox",
+  "version": "1.3.0",
+  "minAppVersion": "1.4.0",
+  "description": "Shift-click a watchlist checkbox to toggle [-] skipped, plus a button to run `yt-catalog refresh` for the open run.",
+  "author": "yt-catalog",
+  "isDesktopOnly": true
+}

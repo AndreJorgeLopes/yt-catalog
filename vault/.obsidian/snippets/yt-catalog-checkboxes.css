@@ -1,0 +1,44 @@
+/* yt-catalog — distinguish watchlist checkbox states (installed by setup).
+ *   [x] watched -> solid green | [-] skipped -> amber dashed + struck | [ ] keep
+ * Enable: Settings -> Appearance -> CSS snippets -> reload -> toggle on.
+ */
+input.task-list-item-checkbox[data-task="x"],
+input.task-list-item-checkbox[data-task="X"],
+li[data-task="x"] > input.task-list-item-checkbox,
+li[data-task="X"] > input.task-list-item-checkbox {
+  --checkbox-color: #22c55e;
+  --checkbox-color-hover: #22c55e;
+  border-color: #22c55e !important;
+  background-color: #22c55e !important;
+}
+
+input.task-list-item-checkbox[data-task="-"],
+li[data-task="-"] > input.task-list-item-checkbox,
+li[data-task="-"] > p > input.task-list-item-checkbox,
+.task-list-item[data-task="-"] > .task-list-item-checkbox {
+  --checkbox-marker-color: transparent;
+  background-color: transparent !important;
+  background-image: none !important;
+  border: 2px dashed #f59e0b !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+
+li[data-task="-"].task-list-item,
+.task-list-item[data-task="-"] {
+  text-decoration: line-through;
+  text-decoration-color: rgba(245, 158, 11, 0.6);
+  color: var(--text-faint);
+}
+
+/* inline "Refresh this run" button (from the ```yt-refresh``` block) */
+button.yt-refresh-btn {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+button.yt-refresh-btn:hover { filter: brightness(1.1); }
