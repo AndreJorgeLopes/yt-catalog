@@ -130,7 +130,7 @@ def test_categorize_with_ai_routes_to_claude_cli():
         with patch.object(ai_provider, "_call_cli", return_value="result") as mock_cli:
             result = ai_provider.categorize_with_ai("prompt")
 
-    mock_cli.assert_called_once_with("claude", "prompt")
+    mock_cli.assert_called_once_with("claude", "prompt", model=ai_provider._CLI_MODEL)
     assert result == "result"
 
 
