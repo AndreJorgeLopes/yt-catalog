@@ -109,9 +109,12 @@ def test_generate_category_file():
 
 
 def test_generate_category_file_empty_group():
+    # only a super-small video -> empty length groups are OMITTED, not labelled
     videos = [_video("a", "Quick Tip", "Ch1", 90, 120, "super-small", ["python"])]
     md = generate_category_file("programming", videos, "2026-03-16")
-    assert "*No videos in this duration range.*" in md
+    assert "## Super Small" in md
+    assert "## Long" not in md          # empty group omitted
+    assert "*No videos in this duration range.*" not in md
 
 
 # ---------------------------------------------------------------------------
@@ -263,3 +266,82 @@ def test_generate_vault_html_content(tmp_path):
     html = open(os.path.join(run_dir, "index.html")).read()
     assert "i.ytimg.com/vi/abc123/mqdefault.jpg" in html
     assert "Python Tutorial" in html
+
+
+# ---------------------------------------------------------------------------
+# watchlist (new format: avatar header, thumbnail, no hidden marker)
+# ---------------------------------------------------------------------------
+
+def test_generate_watchlist_format():
+    from yt_catalog.vault_generator import generate_watchlist
+    v = _video("vid12345678", "A Very Long Title That Would Wrap In The UI",
+               "Ch1", 80, 600, "medium", ["python"])
+    v.channel_id = "UCabc"
+    md = generate_watchlist([v], "2026-03-16")
+    # avatar in the channel header
+    assert "![\\|28](avatars/UCabc.jpg)" in md
+    # video thumbnail present
+    assert "![\\|240](thumbnails/vid12345678.jpg)" in md
+    # rating/length on its own indented continuation line (6 spaces)
+    assert "\n      ⭐80 · " in md
+    # no hidden marker anymore
+    assert "<!-- yt:" not in md
+    # the URL carries the recoverable id
+    assert "watch?v=vid12345678" in md
+
+
+def test_index_has_duration_subsections():
+    vids = [
+        _video("a", "Short", "Ch", 90, 120, "x", []),     # super-small
+        _video("b", "Mid", "Ch", 80, 900, "x", []),       # medium
+    ]
+    md = generate_index({"programming": vids}, "2026-03-16", all_videos=vids)
+    assert "### Super Small" in md
+    assert "### Medium" in md
+
+
+def test_excalidraw_category_sections_no_base64(tmp_path):
+    from yt_catalog.vault_generator import generate_excalidraw
+    import json, re
+    vids = [
+        _video("aaa", "Prog Short", "Ch", 90, 120, "x", []),     # programming super-small
+        _video("bbb", "Prog Long", "Ch", 80, 1800, "x", []),     # programming long
+    ]
+    vids[1].category = "games"
+    md = generate_excalidraw(vids, str(tmp_path))   # no thumbnails on disk -> images skipped
+    # parses
+    drawing = json.loads(re.search(r"```json\n(.*)\n```", md, re.S).group(1))
+    # video cards = rectangles with a link + dark card fill (section frames have
+    # no link and a different fill).
+    cards = [e for e in drawing["elements"]
+             if e["type"] == "rectangle" and e.get("link") and e["backgroundColor"] == "#1e293b"]
+    frames = [e for e in drawing["elements"]
+              if e["type"] == "rectangle" and e["backgroundColor"] == "#0b1220"]
+    assert len(cards) == 2                       # one card per video, no cap
+    assert len(frames) == 2                       # one section frame per category
+    assert drawing["files"] == {}                # base64 map empty
+    assert "data:image/jpeg;base64" not in md    # never inline base64
+    assert "## Embedded Files" in md
+    # category headers present
+    texts = [e["text"] for e in drawing["elements"] if e["type"] == "text"]
+    assert any("Programming" in t for t in texts)
+    assert any("Games" in t for t in texts)
+
+
+def test_insights_splits_this_run_vs_earlier():
+    from yt_catalog.vault_generator import generate_insights
+    state = {
+        "watched": {"thisrun0001": {"channel": "A", "title": "Now Watched"},
+                    "earlier00001": {"channel": "B", "title": "Old Watched"}},
+        "skipped": {"thisrun0002": {"channel": "A", "title": "Now Skipped"}},
+    }
+    md = generate_insights(state, "2026-06-16",
+                           run_video_ids={"thisrun0001", "thisrun0002"})
+    assert "# This run" in md and "# Earlier runs" in md
+    # this-run sections list the current ids
+    assert "Now Watched" in md.split("# Earlier runs")[0]
+    assert "Now Skipped" in md.split("# Earlier runs")[0]
+    # earlier video appears after the "Earlier runs" header
+    assert "Old Watched" in md.split("# Earlier runs")[1]
+    # tables still aggregate all (2 watched, 1 skipped)
+    assert "**Watched (all runs):** 2" in md
