@@ -83,7 +83,7 @@ def test_full_pipeline_chrome_source(tmp_path, monkeypatch):
     with patch("subprocess.run", side_effect=_mock_subprocess), \
          patch("yt_catalog.enricher.urllib.request.urlopen", side_effect=_mock_innertube_urlopen), \
          patch("yt_catalog.enricher.urllib.request.urlretrieve"):
-        main(["run", "--no-mermaid-thumbnails"])
+        main(["run", "--source", "chrome", "--bell", "--no-mermaid-thumbnails"])
 
     run_dir = tmp_path / "vault" / "runs" / date.today().isoformat()
     assert (run_dir / "index.md").exists()
@@ -92,7 +92,7 @@ def test_full_pipeline_chrome_source(tmp_path, monkeypatch):
     assert (run_dir / "data.json").exists()
 
     cp = load_checkpoint(str(run_dir / "data.json"))
-    assert cp.last_completed_phase == "categorization"
+    assert cp.last_completed_phase == "complete"
     # shorts and the live entry from MOCK_SCRAPER_OUTPUT are filtered
     assert len(cp.videos) == 2
     video_ids = {v.video_id for v in cp.videos}
@@ -142,11 +142,11 @@ def test_full_pipeline_filters_livestreams_after_enrichment(tmp_path, monkeypatc
     with patch("subprocess.run", side_effect=mock_subprocess), \
          patch("yt_catalog.enricher.urllib.request.urlopen", side_effect=innertube_mock), \
          patch("yt_catalog.enricher.urllib.request.urlretrieve"):
-        main(["run", "--no-mermaid-thumbnails"])
+        main(["run", "--source", "chrome", "--bell", "--no-mermaid-thumbnails"])
 
     run_dir = tmp_path / "vault" / "runs" / date.today().isoformat()
     cp = load_checkpoint(str(run_dir / "data.json"))
-    assert cp.last_completed_phase == "categorization"
+    assert cp.last_completed_phase == "complete"
     assert len(cp.videos) == 1
     assert cp.videos[0].video_id == "norm1"
 
@@ -189,6 +189,6 @@ def test_full_pipeline_api_source(tmp_path, monkeypatch):
     run_dir = tmp_path / "vault" / "runs" / date.today().isoformat()
     assert (run_dir / "index.md").exists()
     cp = load_checkpoint(str(run_dir / "data.json"))
-    assert cp.last_completed_phase == "categorization"
+    assert cp.last_completed_phase == "complete"
     assert len(cp.videos) == 1
     assert cp.videos[0].video_id == "api1"

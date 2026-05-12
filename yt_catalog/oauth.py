@@ -41,6 +41,14 @@ def load_config() -> dict:
     return {}
 
 
+def update_config(**kwargs) -> None:
+    """Merge key/value pairs into config.json, preserving existing keys."""
+    cfg = load_config()
+    cfg.update(kwargs)
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
+
+
 def _save_tokens(tokens: dict) -> None:
     """Save OAuth tokens to disk."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -136,7 +144,7 @@ def authorize(client_id: str, client_secret: str) -> dict:
         "response_type": "code",
         "scope": " ".join(SCOPES),
         "access_type": "offline",
-        "prompt": "consent",
+        "prompt": "select_account consent",
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
     })

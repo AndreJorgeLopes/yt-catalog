@@ -53,8 +53,12 @@ def test_estimated_new_videos_first_run():
 
 
 def test_estimated_new_videos_incremental():
-    estimate = get_estimated_new_videos("2026-03-15T00:00:00Z")
-    # 2 days * 15 (default median) * 1.5 buffer = 45
+    # Use a watermark relative to *now* so the test doesn't rot as real time
+    # advances (a hardcoded date inflates days_elapsed -> the estimate over time).
+    from datetime import datetime, timedelta, timezone
+    two_days_ago = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    estimate = get_estimated_new_videos(two_days_ago)
+    # ~2 days * 15 (default median) * 1.5 buffer ~= 45
     assert estimate >= 10
     assert estimate < 500
 
