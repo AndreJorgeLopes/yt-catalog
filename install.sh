@@ -18,6 +18,18 @@ fi
 cd "$INSTALL_DIR"
 pip install -e . --quiet
 
+# yt-dlp exports the browser's YouTube cookies for the headless web session
+# (bell channels + watch history). pip install above pulls it in, but prefer a
+# PATH-level install if the user has pipx/brew so the console script is global.
+if ! command -v yt-dlp >/dev/null 2>&1; then
+    echo "Installing yt-dlp (cookie export for the web session)..."
+    if command -v pipx >/dev/null 2>&1; then
+        pipx install yt-dlp || true
+    elif command -v brew >/dev/null 2>&1; then
+        brew install yt-dlp || true
+    fi
+fi
+
 # Setup .env if not exists
 if [ ! -f .env ]; then
     cp .env.example .env

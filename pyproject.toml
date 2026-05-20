@@ -8,12 +8,20 @@ version = "0.1.0"
 description = "Scrape YouTube notifications, categorize with AI, generate an Obsidian vault"
 requires-python = ">=3.12"
 license = "MIT"
+# yt-dlp is the ONE runtime dependency (breaks the prior zero-runtime-deps
+# stance): it exports the browser's YouTube cookies for the headless web session
+# (bell channels + watch history). Everything else is stdlib.
+dependencies = ["yt-dlp>=2024.1.0"]
 
 [project.scripts]
 yt-catalog = "yt_catalog.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest"]
+# Option C (`yt-catalog login`): drives a dedicated browser profile to capture
+# a device-rebind-proof YouTube session. Optional — install with:
+#   pip install 'yt-catalog[login]' && playwright install chromium
+login = ["playwright>=1.40"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

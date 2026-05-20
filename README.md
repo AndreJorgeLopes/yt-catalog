@@ -124,11 +124,13 @@ cp .env.example .env    # Configure your API keys
 ### First run
 
 ```bash
-# Option A: Chrome source (scrapes bell dropdown, no API key needed)
+# Default: auto — uses the YouTube Data API when credentials are configured,
+# else falls back to Chrome scraping of the bell dropdown.
 yt-catalog run
 
-# Option B: YouTube API source (faster, needs API key)
-yt-catalog run --source api
+# Force a source explicitly
+yt-catalog run --source api       # faster; needs API key / OAuth
+yt-catalog run --source chrome    # scrapes the bell dropdown (claude-cli)
 
 # Discover your subscribed channels for API mode
 yt-catalog discover
@@ -148,15 +150,25 @@ open vault/runs/2026-03-17/index.html          # HTML visual index
 
 ```
 yt-catalog run [OPTIONS]
-  --source {chrome,api}          Scraping source (default: chrome)
+  --source {chrome,api,auto}     Where to fetch notifications. Default: auto
+                                 (API when creds exist, else Chrome).
   --ai-provider {claude-cli,anthropic,openai,opencode-cli,codex-cli,rules}
-                                 AI provider for categorization
-  --max-days N                   Only process last N days
-  --max-videos N                 Cap total videos
-  --from-checkpoint PATH         Resume from a checkpoint file
-  --no-mermaid-thumbnails        Text-only mermaid nodes
+                                 AI for categorization. Default: claude-cli
+                                 (or AI_PROVIDER); falls back to rules on error.
+  --max-days N                   Only fetch videos from the last N days.
+                                 Default: unset (full / since-watermark).
+  --max-videos N                 Cap total videos fetched. Default: unset.
+  --from-checkpoint PATH         Resume from a data.json checkpoint. Default: unset.
+  --no-mermaid-thumbnails        Text-only mermaid nodes. Default: off.
+  --filter-watched               Drop videos already watched >= threshold%.
+                                 Default: off. Reads watch history via Chrome
+                                 (no API for it); confirms first after an API
+                                 scrape.
+  --watched-threshold PCT        % watched to count as 'seen'. Default: 50.
+                                 No effect without --filter-watched.
 
 yt-catalog setup                 Configure OAuth + discover channels
+yt-catalog reauth                Re-run OAuth with saved credentials
 yt-catalog discover [PATH]       Extract channel IDs from existing data
 yt-catalog --version             Show version
 ```
