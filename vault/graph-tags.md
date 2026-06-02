@@ -1,7 +1,13 @@
 # Video Tag Taxonomy
 
+## 🤣 Comedy
+#entertainment
+
+## 🛠️ Diy Makers
+#diy
+
 ## 🎮 Games
-#cs2, #investing, #skins
+#cs2, #gaming, #investing, #minecraft, #skins
 
 ## 📌 General
 #lifestyle, #portuguese
@@ -10,10 +16,10 @@
 #3d-printing, #electronics
 
 ## 💻 Programming
-#ai
+#ai, #claude-code, #dev-tools, #react
 
 ## 😴 Sleep
-#asmr, #chiropractic, #massage
+#asmr, #bodywork, #chiropractic
 
 ## 📱 Tech News
-#battery
+#tech
