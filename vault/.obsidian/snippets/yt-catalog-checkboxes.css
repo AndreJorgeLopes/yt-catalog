@@ -1,5 +1,6 @@
 /* yt-catalog — distinguish watchlist checkbox states (installed by setup).
  *   [x] watched -> solid green | [-] skipped -> amber dashed + struck | [ ] keep
+ *   parent "mixed" (some children marked) -> blue (set live by the plugin)
  * Enable: Settings -> Appearance -> CSS snippets -> reload -> toggle on.
  */
 input.task-list-item-checkbox[data-task="x"],
@@ -31,7 +32,19 @@ li[data-task="-"].task-list-item,
   color: var(--text-faint);
 }
 
-/* inline "Refresh this run" button (from the ```yt-refresh``` block) */
+/* parent with mixed children — blue with a dash bar */
+input.task-list-item-checkbox.yt-parent-mixed {
+  background-color: #0a84ff !important;
+  border-color: #0a84ff !important;
+  background-image: linear-gradient(#fff, #fff) !important;
+  background-size: 60% 2px !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+
+/* inline "Refresh / insights" buttons (from the code blocks) */
 button.yt-refresh-btn {
   background: var(--interactive-accent);
   color: var(--text-on-accent);
