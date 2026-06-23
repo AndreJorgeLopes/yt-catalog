@@ -27,7 +27,7 @@ def handle_insights(args: argparse.Namespace) -> None:
     state = curate.load_state()
     applied, cp = curate.apply_run_marks(run, state)
     curate.save_state(state)
-    run_ids = {v.video_id for v in cp.videos}
+    run_videos = {v.video_id: v for v in cp.videos}
     ui.ok(f"Applied {applied['watched']} watched, {applied['skipped']} skipped, "
           f"{applied.get('reverted', 0)} reverted from {run.name}")
 
@@ -36,7 +36,7 @@ def handle_insights(args: argparse.Namespace) -> None:
         ui.info("Nothing marked yet (here or in any prior run). Tick `[x]`/`[-]` "
                 "in watchlist.md, then re-run this. insights.md left as the prompt.")
 
-    (run / "insights.md").write_text(generate_insights(state, run.name, run_ids))
+    (run / "insights.md").write_text(generate_insights(state, run.name, run_videos))
     ui.ok(f"wrote {run.name}/insights.md "
           f"(global totals: {len(state.get('watched', {}))} watched, "
           f"{len(state.get('skipped', {}))} skipped)")

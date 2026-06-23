@@ -280,10 +280,14 @@ def test_generate_watchlist_format():
     md = generate_watchlist([v], "2026-03-16")
     # avatar in the channel header
     assert "![\\|28](avatars/UCabc.jpg)" in md
-    # video thumbnail present
-    assert "![\\|240](thumbnails/vid12345678.jpg)" in md
-    # rating/length on its own indented continuation line (6 spaces)
-    assert "\n      ⭐80 · " in md
+    # channel parent task (cascades to children)
+    assert "- [ ] **All 1 videos**" in md
+    # nested child video task (4-space indent)
+    assert "    - [ ] [A Very Long Title" in md
+    # video thumbnail present (nested 10-space continuation)
+    assert "          ![\\|240](thumbnails/vid12345678.jpg)" in md
+    # rating/length on its own nested continuation line (10 spaces)
+    assert "\n          ⭐80 · " in md
     # no hidden marker anymore
     assert "<!-- yt:" not in md
     # the URL carries the recoverable id
@@ -335,13 +339,16 @@ def test_insights_splits_this_run_vs_earlier():
                     "earlier00001": {"channel": "B", "title": "Old Watched"}},
         "skipped": {"thisrun0002": {"channel": "A", "title": "Now Skipped"}},
     }
+    # split-only (set of ids; no Video objects) still partitions correctly
     md = generate_insights(state, "2026-06-16",
-                           run_video_ids={"thisrun0001", "thisrun0002"})
+                           run_videos={"thisrun0001", "thisrun0002"})
     assert "# This run" in md and "# Earlier runs" in md
-    # this-run sections list the current ids
+    # this-run sections list the current ids, channel-grouped
     assert "Now Watched" in md.split("# Earlier runs")[0]
     assert "Now Skipped" in md.split("# Earlier runs")[0]
     # earlier video appears after the "Earlier runs" header
     assert "Old Watched" in md.split("# Earlier runs")[1]
+    # channel-grouped parent task present
+    assert "**All 2**" in md or "**All 1**" in md
     # tables still aggregate all (2 watched, 1 skipped)
     assert "**Watched (all runs):** 2" in md

@@ -622,6 +622,17 @@ def _download_channel_avatars(videos: list[Video], run_dir: Path) -> None:
         list(pool.map(_dl, missing))
 
 
+def _child_video_task(v: Video, box: str = " ") -> str:
+    """A NESTED (4-space) child video task line + its rating/thumbnail
+    continuation lines (10-space, aligned under the task text so they belong to
+    the child item). The plugin treats the channel line above as the parent."""
+    parts = [f"    - [{box}] [{v.title}]({v.url})",
+             f"          ⭐{v.interest_score or 0} · {v.formatted_duration}"]
+    if v.thumbnail_path:
+        parts.append(f"          ![\\|240](thumbnails/{v.video_id}.jpg)")
+    return "\n".join(parts)
+
+
 def generate_watchlist(videos: list[Video], run_date: str,
                        avatars_subpath: str = "avatars") -> str:
     """A markdown checklist for marking videos watched/skipped, grouped by channel.
@@ -642,7 +653,10 @@ def generate_watchlist(videos: list[Video], run_date: str,
         "- `[x]` = **watched** — hide it  (click, or shift-click for skip)",
         "- `[-]` = **skipped** — hide it AND count it toward channel skip stats "
         "(shift-click the box)",
-        "- leave `[ ]` to keep it\n",
+        "- leave `[ ]` to keep it",
+        "- each channel's **All …** box is a parent: toggle it to set every video "
+        "under it (shift-click = skip them all); it shows a mixed state when only "
+        "some are marked\n",
         "> Then **click the Refresh button above** (or run `yt-catalog refresh "
         "<run>`). For skip stats + the list of what you marked, open "
         "**insights.md** and rebuild it (its button, or `yt-catalog insights <run>`).\n",
@@ -654,13 +668,11 @@ def generate_watchlist(videos: list[Video], run_date: str,
         cid = next((v.channel_id for v in vids if v.channel_id), "")
         avatar = f"![\\|28]({avatars_subpath}/{cid}.jpg) " if cid else ""
         lines.append(f"\n## {avatar}{ch} ({len(vids)})\n")
+        # channel parent task: the plugin detects it as a parent (it has indented
+        # child tasks) and cascades a toggle to all of them.
+        lines.append(f"- [ ] **All {len(vids)} videos**")
         for v in sorted(vids, key=lambda v: v.interest_score or 0, reverse=True):
-            thumb = (f"\n      ![\\|240](thumbnails/{v.video_id}.jpg)"
-                     if v.thumbnail_path else "")
-            lines.append(
-                f"- [ ] [{v.title}]({v.url})"
-                f"\n      ⭐{v.interest_score or 0} · {v.formatted_duration}"
-                f"{thumb}")
+            lines.append(_child_video_task(v))
     return "\n".join(lines)
 
 
@@ -668,13 +680,39 @@ def _yt_url(vid: str) -> str:
     return f"https://www.youtube.com/watch?v={vid}"
 
 
-def generate_insights(state: dict, run_date: str,
-                      run_video_ids: set[str] | None = None) -> str:
+def _insights_channel_blocks(items: list, box: str, lines: list,
+                             run_videos: dict, avatars_subpath: str = "avatars") -> None:
+    """Render marked videos grouped by channel, like the watchlist: an avatar
+    channel header + a parent **All** task + nested child video tasks. For
+    this-run videos (present in ``run_videos``) the child shows the thumbnail +
+    rating; earlier-run videos (meta only) are a plain nested task line."""
+    from collections import defaultdict
+    by_ch: dict[str, list] = defaultdict(list)
+    for vid, meta in items:
+        by_ch[meta.get("channel") or meta.get("channel_id") or "?"].append((vid, meta))
+    for ch, rows in sorted(by_ch.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+        has_obj = any(vid in run_videos for vid, _ in rows)
+        cid = next((m.get("channel_id") for _, m in rows if m.get("channel_id")), "")
+        avatar = f"![\\|28]({avatars_subpath}/{cid}.jpg) " if cid and has_obj else ""
+        lines.append(f"\n### {avatar}{ch} ({len(rows)})\n")
+        lines.append(f"- [{box}] **All {len(rows)}**")
+        for vid, meta in rows:
+            v = run_videos.get(vid)
+            if v is not None:
+                lines.append(_child_video_task(v, box))
+            else:
+                ttl = meta.get("title") or vid
+                lines.append(f"    - [{box}] [{ttl}]({_yt_url(vid)})")
+
+
+def generate_insights(state: dict, run_date: str, run_videos=None) -> str:
     """Curation analytics from the accumulated (global) watched/skipped marks.
 
     Tables + graphs aggregate ALL runs. The video LISTS are split into "this run"
-    (ids present in this run's data.json, via ``run_video_ids``) vs "earlier
-    runs", so you can see what you just marked separately from the history.
+    (ids present in this run's data.json) vs "earlier runs", and grouped by
+    channel like the watchlist (avatar header, parent **All** task, nested child
+    video tasks with thumbnails). ``run_videos`` may be a ``{video_id: Video}``
+    map (enables thumbnails/avatars) or a set of ids (split only) or None.
     """
     from . import curate
     ch_rows = curate.channel_skip_stats(state)
@@ -682,7 +720,9 @@ def generate_insights(state: dict, run_date: str,
     watched = state.get("watched", {})
     skipped = state.get("skipped", {})
     nwatched, nskipped = len(watched), len(skipped)
-    ids = run_video_ids if run_video_ids is not None else set()
+    by_id = run_videos if isinstance(run_videos, dict) else {}
+    ids = set(by_id) if by_id else (set(run_videos) if run_videos else set())
+    split_enabled = run_videos is not None
     lines = [
         "---", "tags: [youtube-catalog, insights]", "---",
         "# Curation Insights\n",
@@ -697,38 +737,34 @@ def generate_insights(state: dict, run_date: str,
                      "`yt-catalog refresh <run>`), then rebuild this._")
         return "\n".join(lines)
 
-    # The actual marked videos — so you can confirm what's set and REVERT it:
-    # uncheck a box here and rebuild (insights/refresh) to un-mark that video.
-    def _mark_list(items: list, box: str, title: str) -> None:
+    # The marked videos — grouped by channel so you can confirm + REVERT (uncheck
+    # a box, or a channel's **All** box, then rebuild).
+    def _section(items, box, title):
         if not items:
             return
         lines.append(f"\n## {title} ({len(items)})\n")
-        lines.append("_Uncheck a box to revert it, then rebuild (button / "
-                     "`yt-catalog insights <run>`)._\n")
-        for vid, meta in items:
-            ch = meta.get("channel") or meta.get("channel_id") or "?"
-            ttl = meta.get("title") or vid
-            lines.append(f"- [{box}] [{ttl}]({_yt_url(vid)}) — {ch}")
+        lines.append("_Uncheck a box (or a channel's **All**) to revert, then "
+                     "rebuild._")
+        _insights_channel_blocks(items, box, lines, by_id)
 
     def _split(bucket: dict):
         items = sorted(bucket.items(),
                        key=lambda kv: (kv[1].get("channel") or "", kv[1].get("title") or ""))
-        this_run = [it for it in items if it[0] in ids]
-        earlier = [it for it in items if it[0] not in ids]
-        return this_run, earlier
+        return ([it for it in items if it[0] in ids],
+                [it for it in items if it[0] not in ids])
 
     w_now, w_prev = _split(watched)
     s_now, s_prev = _split(skipped)
-    if run_video_ids is not None:
+    if split_enabled:
         lines.append("\n# This run")
-        _mark_list(w_now, "x", "✅ Watched — this run")
-        _mark_list(s_now, "-", "⏭️ Skipped — this run")
+        _section(w_now, "x", "✅ Watched — this run")
+        _section(s_now, "-", "⏭️ Skipped — this run")
         lines.append("\n# Earlier runs")
-        _mark_list(w_prev, "x", "✅ Watched — earlier runs")
-        _mark_list(s_prev, "-", "⏭️ Skipped — earlier runs")
+        _section(w_prev, "x", "✅ Watched — earlier runs")
+        _section(s_prev, "-", "⏭️ Skipped — earlier runs")
     else:
-        _mark_list(w_now + w_prev, "x", "✅ Watched")
-        _mark_list(s_now + s_prev, "-", "⏭️ Skipped")
+        _section(w_now + w_prev, "x", "✅ Watched")
+        _section(s_now + s_prev, "-", "⏭️ Skipped")
 
     lines.append("\n> Raw counts only — `skipped` just means you skipped that video. "
                  "Use this however you like to build your own channel lists.\n")
@@ -795,7 +831,7 @@ def generate_vault(videos: list[Video], run_dir: str, mermaid_thumbnails: bool =
     (run_path / "watchlist.md").write_text(generate_watchlist(visible, run_date))
     (run_path / "insights.md").write_text(
         generate_insights(state, run_date,
-                          run_video_ids={v.video_id for v in videos}))
+                          run_videos={v.video_id: v for v in videos}))
 
     try:
         (run_path / "diagram.excalidraw.md").write_text(generate_excalidraw(visible, str(run_path)))
